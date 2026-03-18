@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "announcements": [
+    {
+      "id": "001",
+      "type": "info",
+      "content": "欢迎使用数据洞察助手！",
+      "enabled": true,
+      "dismissible": true,
+      "startDate": "2024-01-01",
+      "endDate": "2024-12-31"
+    },
+    {
+      "id": "002",
+      "type": "warning",
+      "content": "20M以上文件处理时间可能较长",
+      "enabled": true,
+      "dismissible": false,
+      "startDate": "2024-01-01",
+      "endDate": "2024-06-30"
+    }
+  ]
+}

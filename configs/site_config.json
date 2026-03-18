@@ -1,0 +1,18 @@
+{
+  "site": {
+    "name": "数据洞察助手",
+    "version": "1.0.0",
+    "copyright": "© 2024 数据洞察团队",
+    "icp": "",
+    "company": ""
+  },
+  "footer": {
+    "showVersion": true,
+    "showICP": false,
+    "links": [
+      {"text": "关于", "url": "#"},
+      {"text": "帮助", "url": "#"},
+      {"text": "反馈", "url": "#"}
+    ]
+  }
+}
