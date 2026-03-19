@@ -36,7 +36,7 @@ class ThemeManager:
         "bg_color": "#F5F5F5",      # 浅灰背景
         "block_bg": "#FFFFFF",       # 区块背景(白)
         "card_bg": "#FAFAFA",        # 卡片背景
-        "text_primary": "#333333",   # 主文字(深灰)
+        "text_primary": "yellow",   # 主文字(黄色)
         "text_emphasis": "#000000",  # 强调文字(黑)
         "border": "#E0E0E0",         # 边框/分割线
         "button_normal": "#E0E0E0",  # 普通按钮
@@ -272,7 +272,76 @@ class ThemeManager:
                 padding: 1rem;
                 background-color: {theme['block_bg']};
             }}
+            
+            /* ===== 新增：Metric 数字颜色修复 ===== */
+            /* Metric 容器样式 */
+            .stMetric {{
+                background-color: {theme['card_bg']};
+                padding: 1rem;
+                border-radius: 8px;
+                border: 1px solid {theme['border']};
+                margin-bottom: 0.5rem;
+            }}
+            
+            /* Metric 标签 */
+            .stMetric label {{
+                color: {theme['text_primary']} !important;
+                font-size: 0.9rem !important;
+            }}
+            
+            /* Metric 数值 - 亮橙色 */
+            .stMetric [data-testid="stMetricValue"] {{
+                color: #FFA500 !important;
+                font-size: 2rem !important;
+                font-weight: bold !important;
+            }}
+            
+            /* Metric 增量/变化值 */
+            .stMetric [data-testid="stMetricDelta"] {{
+                color: {theme['text_primary']} !important;
+            }}
+            
+            /* 备用选择器（确保覆盖） */
+            [data-testid="stMetricValue"] {{
+                color: #FFA500 !important;
+                font-size: 2rem !important;
+                font-weight: bold !important;
+            }}
+            
+            [data-testid="stMetricLabel"] {{
+                color: {theme['text_primary']} !important;
+                font-size: 0.9rem !important;
+            }}
+            
+            /* Metric 容器 */
+            [data-testid="metric-container"] {{
+                background-color: {theme['card_bg']};
+                padding: 1rem;
+                border-radius: 8px;
+                border: 1px solid {theme['border']};
+            }}
+            
+            /* 鼠标悬停效果 */
+            [data-testid="metric-container"]:hover [data-testid="stMetricValue"] {{
+                color: #FF8C00 !important;
+            }}
+            
+            /* 确保其他数字也清晰可见 */
+            .stDataFrame td {{
+                color: {theme['text_primary']} !important;
+            }}
+            
+            .stDataFrame th {{
+                color: {theme['text_emphasis']} !important;
+                background-color: {theme['block_bg']} !important;
+            }}
+            
+            /* 统计信息中的数字 */
+            .stMarkdown p strong {{
+                color: #FFA500 !important;
+            }}
         </style>
         """
         
         st.markdown(custom_css, unsafe_allow_html=True)
+        
