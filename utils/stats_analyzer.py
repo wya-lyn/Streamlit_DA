@@ -148,3 +148,4 @@ class StatsAnalyzer:
         except Exception as e:
             st.error(f"透视表生成失败: {str(e)}")
             return pd.DataFrame()
+    

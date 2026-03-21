@@ -23,6 +23,7 @@ from components.layout import LayoutManager
 from components.announcements import AnnouncementManager
 from components.footer import FooterManager
 from components.history_manager import HistoryManager
+from utils.chart_factory import ChartFactory
 
 # ============================================
 # 页面配置
@@ -107,6 +108,11 @@ def init_session_state():
     if 'preview_manager' not in st.session_state:
         st.session_state.preview_manager = PreviewManager()
         print("【调试】preview_manager 已初始化")
+        # 【新增】图表工厂
+    if 'chart_factory' not in st.session_state:
+        from utils.chart_factory import ChartFactory
+        st.session_state.chart_factory = ChartFactory()
+        print("【调试】图表工厂已初始化")
 
 # ============================================
 # 执行初始化
@@ -175,7 +181,7 @@ def render_theme_toggle():
             st.rerun()
 
 def render_file_uploader():
-    """文件上传组件（简化版）"""
+    """文件上传组件（支持多工作表Excel）"""
     st.markdown("### 📤 数据上传")
     
     uploaded_file = st.file_uploader(
@@ -185,72 +191,77 @@ def render_file_uploader():
         key="file_uploader"
     )
     
-    if uploaded_file is not None:
-        # 检查是否是新上传的文件
-        current_file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+    if uploaded_file is None:
+        # 清除状态
+        if 'df' in st.session_state:
+            st.session_state.df = None
+        return
+    
+    file_extension = uploaded_file.name.split('.')[-1].lower()
+    
+    # 处理Excel多工作表
+    if file_extension in ['xlsx', 'xls']:
+        import pandas as pd
         
-        # 如果文件已经加载过，不再重复加载
-        if st.session_state.get('last_uploaded_file_key') != current_file_key:
-            file_extension = uploaded_file.name.split('.')[-1].lower()
+        # 获取所有工作表名称
+        xl = pd.ExcelFile(uploaded_file)
+        sheet_names = xl.sheet_names
+        
+        if len(sheet_names) > 1:
+            st.info(f"📑 检测到 {len(sheet_names)} 个工作表")
             
-            # 处理Excel多工作表
-            if file_extension in ['xlsx', 'xls']:
-                import pandas as pd
-                xl = pd.ExcelFile(uploaded_file)
-                sheet_names = xl.sheet_names
-                
-                if len(sheet_names) > 1:
-                    st.info(f"📑 检测到 {len(sheet_names)} 个工作表")
-                    sheet_name = st.selectbox(
-                        "选择工作表",
-                        sheet_names,
-                        key="excel_sheet",
-                        index=0
-                    )
+            # 使用 session_state 保存确认状态
+            if 'sheet_selected' not in st.session_state:
+                st.session_state.sheet_selected = sheet_names[0]
+            if 'sheet_loaded' not in st.session_state:
+                st.session_state.sheet_loaded = False
+            
+            # 工作表选择下拉框
+            selected_sheet = st.selectbox(
+                "请选择要加载的工作表",
+                sheet_names,
+                key="excel_sheet_selector",
+                index=sheet_names.index(st.session_state.sheet_selected)
+            )
+            st.session_state.sheet_selected = selected_sheet
+            
+            # 确认加载按钮
+            if st.button("✅ 确认加载", key="confirm_sheet_load", use_container_width=True, type="primary"):
+                with st.spinner(f"正在加载工作表: {selected_sheet}..."):
+                    df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+                    st.session_state.sheet_loaded = True
+            else:
+                # 未确认，不加载
+                if not st.session_state.sheet_loaded:
+                    st.info("请选择工作表后点击「确认加载」按钮")
+                    return
                 else:
-                    sheet_name = sheet_names[0]
-                
-                with st.spinner(f"正在加载工作表: {sheet_name}..."):
-                    df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
-            else:
-                with st.spinner("正在加载数据..."):
-                    df = managers['file_loader'].load_file(uploaded_file)
-            
-            if df is not None:
-                # 处理缺失值
-                df = df.fillna("null")
-                # 重置索引
-                df = df.reset_index(drop=True)
-                
-                st.session_state.df = df
-                st.session_state.original_df = df.copy()
-                st.session_state.last_uploaded_file_key = current_file_key
-                managers['history'].add_to_history("上传文件", df)
-                
-                st.markdown(
-                    f"""
-                    <div style="
-                        background-color: #2A5A3A;
-                        border-left: 4px solid #4CAF50;
-                        padding: 1rem;
-                        border-radius: 4px;
-                        margin-bottom: 1rem;
-                        color: #FFFFFF;
-                    ">
-                        ✅ 加载成功！{len(df)}行 × {len(df.columns)}列
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
-                st.session_state.preview_manager.record_operation("上传文件")
-                st.rerun()
-            else:
-                st.error("文件加载失败，请检查文件格式")
+                    df = pd.read_excel(uploaded_file, sheet_name=st.session_state.sheet_selected)
+        else:
+            df = pd.read_excel(uploaded_file, sheet_name=sheet_names[0])
     else:
-        # 没有文件上传时，清除上次上传记录
-        if 'last_uploaded_file_key' in st.session_state:
-            st.session_state.last_uploaded_file_key = None
+        df = managers['file_loader'].load_file(uploaded_file)
+    
+    # 处理加载的数据
+    if df is not None:
+        df = df.fillna("null")
+        df = df.reset_index(drop=True)
+        
+        st.session_state.df = df
+        st.session_state.original_df = df.copy()
+        managers['history'].add_to_history("上传文件", df)
+        
+        # 清除工作表选择状态
+        if 'sheet_selected' in st.session_state:
+            del st.session_state.sheet_selected
+        if 'sheet_loaded' in st.session_state:
+            del st.session_state.sheet_loaded
+        
+        st.success(f"✅ 加载成功！{len(df)}行 × {len(df.columns)}列")
+        st.session_state.preview_manager.record_operation("上传文件")
+        st.rerun()
+    else:
+        st.error("文件加载失败，请检查文件格式")
 
 # ============================================
 # 右侧功能面板
@@ -1725,96 +1736,131 @@ def render_correlation_with_heatmap():
     """相关性分析 + 热力图"""
     st.markdown("#### 相关性分析")
     
+    # 获取数值列
     numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     
     if len(numeric_cols) < 2:
         st.warning("需要至少2个数值列才能进行相关性分析")
+        # 显示提示
+        with st.expander("💡 如何准备数据？"):
+            st.markdown("""
+            **相关性分析要求**：
+            - 只能分析**数值列**（int64, float64类型）
+            - 文本列需要先转换为数值才能分析
+            - 可以使用 **转换** 功能将文本转为数值
+            
+            **当前数值列**：
+            """ + (", ".join(numeric_cols) if numeric_cols else "无数值列"))
         return
     
-    col1, col2 = st.columns([1, 1])
+    # 列选择
+    selected_cols = st.multiselect(
+        "选择要分析的数值列（至少2列）",
+        numeric_cols,
+        key="corr_cols_chart",
+        placeholder="请选择要分析的数值列"
+    )
+    
+    if len(selected_cols) < 2:
+        st.info("数据中至少包含2个数值列才能进行分析")
+        return
+    
+    # 方法选择
+    method = st.selectbox(
+        "选择分析方法",
+        ["pearson", "spearman", "kendall"],
+        key="corr_method_chart",
+        format_func=lambda x: {
+            "pearson": "皮尔逊 (Pearson) - 线性相关，适用于连续数值",
+            "spearman": "斯皮尔曼 (Spearman) - 秩相关，适用于单调关系",
+            "kendall": "肯德尔 (Kendall) - 一致性，适用于小样本"
+        }[x]
+    )
+    
+    # 图表选项
+    col1, col2 = st.columns(2)
     
     with col1:
-        # 列选择 - 没有默认值
-        selected_cols = st.multiselect(
-            "选择要分析的列",
-            numeric_cols,
-            key="corr_cols_chart",
-            placeholder="请至少选择2列"
-        )
-        
-        if selected_cols and len(selected_cols) >= 2:
-            # 方法选择
-            method = st.selectbox(
-                "选择分析方法",
-                ["请选择方法", "pearson", "spearman", "kendall"],
-                key="corr_method_chart",
-                format_func=lambda x: {
-                    "请选择方法": "请选择分析方法",
-                    "pearson": "皮尔逊 (线性相关)",
-                    "spearman": "斯皮尔曼 (秩相关)",
-                    "kendall": "肯德尔 (一致性)"
-                }.get(x, x),
-                index=0
-            )
+        show_values = st.checkbox("显示相关系数", value=True, key="corr_show_values")
     
     with col2:
-        if selected_cols and len(selected_cols) >= 2 and method != "请选择方法":
-            # 图表选项
-            st.markdown("##### 图表设置")
-            show_values = st.checkbox("显示相关系数", value=True, key="corr_show_values")
-            color_scale = st.selectbox(
-                "选择色阶",
-                ["RdBu_r", "Viridis", "Plasma", "Inferno"],
-                key="corr_colorscale"
-            )
+        color_scale = st.selectbox(
+            "色阶",
+            ["RdBu_r", "Viridis", "Plasma", "Inferno", "Blues", "Reds"],
+            key="corr_colorscale"
+        )
     
     # 操作按钮
-    if selected_cols and len(selected_cols) >= 2 and method != "请选择方法":
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("📊 生成相关性矩阵", key="btn_corr_matrix", use_container_width=True):
-                with st.spinner("正在计算相关性..."):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📊 生成相关性矩阵", key="btn_corr_matrix", use_container_width=True):
+            with st.spinner("正在计算相关性..."):
+                try:
+                    # 计算相关性矩阵
                     corr_df = managers['stats_analyzer'].correlation_analysis(
                         st.session_state.df[selected_cols], method
                     )
+                    
                     if corr_df is not None and not corr_df.empty:
+                        # 格式化数值，保留4位小数
+                        corr_df = corr_df.round(4)
+                        
+                        # 更新预览管理器
                         st.session_state.preview_manager.update_stats_preview(
                             corr_df, 
-                            f"{method}相关性矩阵"
+                            f"{method.upper()}相关性矩阵"
                         )
-                        st.success("相关性矩阵已生成")
+                        st.success("相关性矩阵已生成，请查看主内容区")
                         st.rerun()
-        
-        with col2:
-            if st.button("🔥 生成热力图", key="btn_corr_heatmap", use_container_width=True):
-                with st.spinner("正在生成热力图..."):
-                    try:
+                    else:
+                        st.error("相关性矩阵生成失败")
+                        
+                except Exception as e:
+                    st.error(f"计算失败: {str(e)}")
+    
+    with col2:
+        if st.button("🔥 生成热力图", key="btn_corr_heatmap", use_container_width=True):
+            with st.spinner("正在生成热力图..."):
+                try:
+                    # 计算相关性矩阵
+                    corr_df = managers['stats_analyzer'].correlation_analysis(
+                        st.session_state.df[selected_cols], method
+                    )
+                    
+                    if corr_df is not None and not corr_df.empty:
+                        # 创建热力图
                         fig = managers['chart_generator'].create_chart(
-                            st.session_state.df[selected_cols], 
+                            corr_df, 
                             "热力图",
                             colorscale=color_scale,
                             show_values=show_values
                         )
+                        
                         if fig:
                             st.session_state.preview_manager.update_chart_preview(
                                 fig, 
-                                f"{method}相关性热力图"
+                                f"{method.upper()}相关性热力图"
                             )
-                            st.success("热力图已生成")
+                            st.success("热力图已生成，请查看主内容区")
                             st.rerun()
-                    except Exception as e:
-                        st.error(f"生成失败: {str(e)}")
-        
-        with col3:
-            st.caption(f"分析 {len(selected_cols)} 列的相关性")
-    else:
-        st.info("请依次选择：至少2列 → 分析方法")
+                        else:
+                            st.error("热力图生成失败")
+                    else:
+                        st.error("相关性矩阵计算失败")
+                        
+                except Exception as e:
+                    st.error(f"生成失败: {str(e)}")
+    
+    # 显示已选择列的信息
+    if len(selected_cols) >= 2:
+        st.caption(f"已选择 {len(selected_cols)} 列: {', '.join(selected_cols[:5])}{'...' if len(selected_cols) > 5 else ''}")
             
 def render_group_stats_with_chart():
     """分组统计 + 聚合图表"""
     st.markdown("#### 分组统计")
     
+    # 获取列信息
     category_cols = st.session_state.df.select_dtypes(include=['object']).columns.tolist()
     numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     
@@ -1826,14 +1872,17 @@ def render_group_stats_with_chart():
         st.warning("没有数值列可用于聚合")
         return
     
-    col1, col2 = st.columns([1, 1])
+    # 左右两列布局
+    col_left, col_right = st.columns([1, 1])
     
-    with col1:
+    with col_left:
+        st.markdown("##### 分组设置")
+        
         group_cols = st.multiselect(
-            "选择分组字段",
+            "选择分组字段（支持多级分组）",
             category_cols,
             key="group_cols_chart",
-            placeholder="请选择分组字段"
+            placeholder="请选择分组字段（可按顺序选择多个）"
         )
         
         value_cols = st.multiselect(
@@ -1859,87 +1908,86 @@ def render_group_stats_with_chart():
             index=0
         )
     
-    with col2:
+    with col_right:
         if group_cols and value_cols and agg_func != "请选择聚合函数":
-            chart_options = ["请选择图表类型", "柱状图", "折线图", "饼图", "条形图"]
+            st.markdown("##### 图表设置")
+            
             chart_type = st.selectbox(
                 "选择图表类型",
-                chart_options,
+                ["分组柱状图"],
                 key="group_chart_type",
-                index=0
+                index=0,
+                disabled=True  # 目前只支持分组柱状图，后续可扩展
             )
             
-            if chart_type != "请选择图表类型":
-                if chart_type == "饼图":
-                    st.info("饼图只显示第一个分组字段")
-                
+            col_a, col_b = st.columns(2)
+            with col_a:
                 sort_by = st.checkbox("排序显示", value=True, key="group_sort")
-                show_values = st.checkbox("显示数值", value=True, key="group_show_values")
+            with col_b:
+                show_values = st.checkbox("显示数值标签", value=True, key="group_show_values")
     
+    # 按钮区域
     if group_cols and value_cols and agg_func != "请选择聚合函数":
-        col1, col2, col3 = st.columns(3)
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
         
-        with col1:
+        with col_btn1:
             if st.button("📊 执行分组统计", key="btn_group_calc", use_container_width=True):
                 with st.spinner("正在计算分组统计..."):
                     try:
-                        # 【修复】处理空值
-                        df_clean = st.session_state.df.copy()
-                        for col in group_cols:
-                            df_clean[col] = df_clean[col].fillna("(空值)")
+                        from components.group_stats_chart import GroupStatsChart
                         
-                        grouped_df = df_clean.groupby(group_cols)[value_cols].agg(agg_func).reset_index()
+                        chart = GroupStatsChart(
+                            st.session_state.df,
+                            group_cols,
+                            value_cols,
+                            agg_func
+                        )
                         
-                        # 格式化数值
-                        for col in value_cols:
-                            grouped_df[col] = grouped_df[col].round(2)
+                        # 获取统计表
+                        result_df = chart.agg_df
+                        result_df = result_df.round(2)
                         
                         st.session_state.preview_manager.update_stats_preview(
-                            grouped_df,
-                            f"分组统计: {', '.join(group_cols)}"
+                            result_df,
+                            f"分组统计: {' → '.join(group_cols)}"
                         )
                         st.success("分组统计已生成，请查看主内容区")
                         st.rerun()
                     except Exception as e:
                         st.error(f"生成失败: {str(e)}")
         
-        with col2:
-            if chart_type != "请选择图表类型" and st.button("📈 生成分组图表", key="btn_group_chart", use_container_width=True):
+        with col_btn2:
+            if st.button("📈 生成分组图表", key="btn_group_chart", use_container_width=True):
                 with st.spinner("正在生成图表..."):
                     try:
-                        # 【修复】处理空值
-                        df_clean = st.session_state.df.copy()
-                        for col in group_cols:
-                            df_clean[col] = df_clean[col].fillna("(空值)")
+                        from components.group_stats_chart import GroupStatsChart
                         
-                        # 聚合数据
-                        agg_df = df_clean.groupby(group_cols[0])[value_cols[0]].agg(agg_func).reset_index()
-                        agg_df = agg_df.dropna()
-                        
-                        if sort_by:
-                            agg_df = agg_df.sort_values(value_cols[0], ascending=False)
-                        
-                        fig = managers['chart_generator'].create_chart(
-                            agg_df, 
-                            chart_type, 
-                            group_cols[0], 
-                            value_cols[0]
+                        chart = GroupStatsChart(
+                            st.session_state.df,
+                            group_cols,
+                            value_cols,
+                            agg_func
                         )
+                        
+                        fig = chart.render(show_values=show_values, sort_by=sort_by)
                         
                         if fig:
                             st.session_state.preview_manager.update_chart_preview(
                                 fig,
-                                f"{value_cols[0]}按{group_cols[0]}分组"
+                                f"{value_cols[0]} 按 {' → '.join(group_cols)} 分组"
                             )
-                            st.success("分组图表已生成，请查看主内容区")
-                            st.rerun()
+                            st.session_state.preview_mode = 'chart'
                         else:
                             st.error("图表生成失败")
                     except Exception as e:
                         st.error(f"生成失败: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
         
-        with col3:
+        with col_btn3:
             st.caption(f"已选择: {len(group_cols)}个分组, {len(value_cols)}个数值")
+            if len(group_cols) > 1:
+                st.caption(f"分组层级: {' → '.join(group_cols)}")
     else:
         st.info("请依次选择：分组字段 → 数值字段 → 聚合函数")
             
@@ -2259,8 +2307,49 @@ def render_main_content():
 
 def render_welcome_page():
     """欢迎页面（无数据时显示）"""
-    st.info("👈 请在左侧边栏上传数据文件开始分析")
     
+    # 添加一个可点击的提示，点击后展开侧边栏
+    st.markdown("""
+    <div style="
+        text-align: center;
+        padding: 3rem;
+        background: linear-gradient(135deg, #6A4E9B20, #4A6A8B20);
+        border-radius: 16px;
+        margin: 2rem 0;
+        border: 1px dashed #6A4E9B;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    " id="upload-hint">
+        <h2>📊 数据洞察助手</h2>
+        <p style="color: #9AA7C0; font-size: 1.1rem;">
+            👈 点击此处，在左侧边栏上传数据文件开始分析
+        </p>
+        <p style="font-size: 0.9rem;">支持 CSV、Excel、JSON 格式</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 添加 JavaScript 实现点击展开侧边栏并聚焦到上传组件
+    st.markdown("""
+    <script>
+        document.getElementById('upload-hint').addEventListener('click', function() {
+            // 查找侧边栏折叠按钮并点击展开
+            const collapseBtn = document.querySelector('[data-testid="stSidebarCollapsedControl"]');
+            if (collapseBtn) {
+                collapseBtn.click();
+                // 延迟后滚动到上传组件
+                setTimeout(function() {
+                    const uploader = document.querySelector('[data-testid="stFileUploader"]');
+                    if (uploader) {
+                        uploader.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        uploader.focus();
+                    }
+                }, 300);
+            }
+        });
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # 功能介绍（可折叠）
     with st.expander("✨ 功能介绍", expanded=True):
         col1, col2 = st.columns(2)
         
@@ -2269,14 +2358,16 @@ def render_welcome_page():
             ### 📁 数据管理
             - **数据上传**：支持CSV/Excel/JSON，自动识别类型
             - **数据预览**：统一预览管理，可调节预览行数
-            - **数据清洗**：去重/替换/转换/分列/合并/批量操作
-            - **数据筛选**：文本/数值多条件筛选
+            - **数据清洗**：去重/替换/转换/分列/合并/修改表头/删除列
+            - **数据筛选**：文本/数值/日期多条件筛选
             - **撤销/重做**：操作历史记录
             
             ### 📊 数据分析
             - **描述性统计**：均值/中位数/标准差/偏度/峰度等
             - **相关性分析**：Pearson/Spearman/Kendall
-            - **分组统计**：多级分组聚合
+            - **分组统计**：1-3级分组，子图布局
+            - **时间序列分析**：趋势图/移动平均/同比环比
+            - **数据透视表**：灵活的数据透视
             """)
         
         with col2:
@@ -2284,8 +2375,9 @@ def render_welcome_page():
             ### 📈 可视化
             - **基础图表**：柱状图/折线图/散点图/热力图/饼图
             - **复合饼图**：子图布局/交互下钻/复合定位
-            - **高级图表**：箱线图/直方图
+            - **高级图表**：箱线图/直方图/分组柱状图/堆积柱状图
             - **图表交互**：缩放/平移/悬停/点击联动
+            - **图表导出**：PNG/PDF/SVG
             
             ### 🤖 AI分析
             - **可开关控制**：默认关闭

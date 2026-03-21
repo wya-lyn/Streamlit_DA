@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# 数据文件
+*.csv
+*.xlsx
+*.xls
+*.json
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+
+# 临时文件
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+*.swo
+
+# 导出文件
+exports/
+downloads/
+temp_*.xlsx
+temp_*.csv
+temp_*.json
+
+# 部署相关
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 配置文件（敏感信息）
+configs/*.local.json
+*.key
+*.pem
+*.crt
+
+# 项目特定
+assets/*.png
+assets/*.jpg
+assets/*.svg
+assets/*.gif

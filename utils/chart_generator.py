@@ -12,182 +12,242 @@ import numpy as np
 class ChartGenerator:
     """图表生成器"""
     
+    # 默认图表参数
+    DEFAULT_CONFIG = {
+        # ... 配置保持不变 ...
+    }
+    
     @staticmethod
     def create_chart(df, chart_type, x_col=None, y_col=None, color_col=None, **kwargs):
-        """创建基础图表"""
+        """创建图表"""
         try:
+            # 合并配置
+            chart_config = ChartGenerator.DEFAULT_CONFIG.get(chart_type, {}).copy()
+            chart_config.update(kwargs)
+            
+            # 根据图表类型调用对应方法
             if chart_type == "柱状图":
-                return ChartGenerator._create_bar_chart(df, x_col, y_col, color_col, **kwargs)
+                return ChartGenerator._create_bar_chart(df, x_col, y_col, color_col, chart_config)
             elif chart_type == "折线图":
-                return ChartGenerator._create_line_chart(df, x_col, y_col, color_col, **kwargs)
-            elif chart_type == "散点图":
-                return ChartGenerator._create_scatter_chart(df, x_col, y_col, color_col, **kwargs)
-            elif chart_type == "热力图":
-                return ChartGenerator._create_heatmap(df, **kwargs)
-            elif chart_type == "饼图":
-                return ChartGenerator._create_pie_chart(df, x_col, y_col, **kwargs)
-            elif chart_type == "复合饼图":
-                mode = kwargs.get('pie_mode', '子图布局')
-                return ChartGenerator._create_composite_pie(df, x_col, y_col, mode, **kwargs)
-            elif chart_type == "箱线图":
-                return ChartGenerator._create_box_plot(df, x_col, y_col, **kwargs)
-            elif chart_type == "直方图":
-                return ChartGenerator._create_histogram(df, x_col, **kwargs)
-            else:
-                return None
+                return ChartGenerator._create_line_chart(df, x_col, y_col, color_col, chart_config)
+            # ... 其他图表类型 ...
         except Exception as e:
             st.error(f"图表生成失败: {str(e)}")
             return None
     
     @staticmethod
-    def _create_bar_chart(df, x_col, y_col, color_col=None, **kwargs):
+    def _create_bar_chart(df, x_col, y_col, color_col, config):
         """创建柱状图"""
-        fig = px.bar(
-            df, 
-            x=x_col, 
-            y=y_col,
-            color=color_col,
-            title=kwargs.get('title', f'{y_col} 分布'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white'
-        )
+        orientation = config.get('orientation', 'v')
+        
+        if orientation == 'h':
+            fig = px.bar(
+                df, 
+                y=x_col, 
+                x=y_col,
+                color=color_col,
+                orientation='h',
+                template=config.get('template', 'plotly_dark'),
+                text_auto=config.get('show_values', False)
+            )
+        else:
+            fig = px.bar(
+                df, 
+                x=x_col, 
+                y=y_col,
+                color=color_col,
+                template=config.get('template', 'plotly_dark'),
+                text_auto=config.get('show_values', False)
+            )
+        
         fig.update_layout(
+            title=config.get('title', f'{y_col} 分布' if y_col else '柱状图'),
+            width=config.get('width'),
+            height=config.get('height', 500),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
         )
+        
+        if config.get('show_values', False):
+            fig.update_traces(
+                textposition=config.get('textposition', 'outside'),
+                textfont_size=config.get('textfont_size', 10)
+            )
+        
         return fig
     
     @staticmethod
-    def _create_line_chart(df, x_col, y_col, color_col=None, **kwargs):
+    def _create_line_chart(df, x_col, y_col, color_col, config):
         """创建折线图"""
         fig = px.line(
             df, 
             x=x_col, 
             y=y_col,
             color=color_col,
-            title=kwargs.get('title', f'{y_col} 趋势'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white'
+            template=config.get('template', 'plotly_dark')
         )
+        
+        if config.get('show_values', False):
+            fig.update_traces(
+                mode='lines+markers+text',
+                text=df[y_col].round(2),
+                textposition='top center',
+                line=dict(width=config.get('line_width', 2)),
+                marker=dict(size=config.get('marker_size', 6))
+            )
+        
         fig.update_layout(
+            title=config.get('title', f'{y_col} 趋势'),
+            width=config.get('width'),
+            height=config.get('height', 500),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
         )
+        
         return fig
     
     @staticmethod
-    def _create_scatter_chart(df, x_col, y_col, color_col=None, **kwargs):
-        """创建散点图"""
-        fig = px.scatter(
-            df, 
-            x=x_col, 
-            y=y_col,
-            color=color_col,
-            title=kwargs.get('title', f'{x_col} vs {y_col}'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white'
+    def _create_pie_chart(df, names_col, values_col, config):
+        """创建饼图"""
+        pie_data = df.groupby(names_col)[values_col].sum().reset_index()
+        
+        hole = config.get('hole', 0)
+        textinfo = config.get('textinfo', 'label+percent')
+        
+        fig = px.pie(
+            pie_data,
+            names=names_col,
+            values=values_col,
+            title=config.get('title', f'{names_col} 分布'),
+            template=config.get('template', 'plotly_dark'),
+            hole=hole
         )
+        
+        fig.update_traces(
+            textposition='inside',
+            textinfo=textinfo,
+            textfont_size=config.get('font_size', 12)
+        )
+        
         fig.update_layout(
+            width=config.get('width'),
+            height=config.get('height', 500),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
         )
+        
         return fig
     
     @staticmethod
-    def _create_heatmap(df, **kwargs):
+    def _create_heatmap(df, config):
         """创建热力图"""
         numeric_df = df.select_dtypes(include=['int64', 'float64'])
         if numeric_df.shape[1] < 2:
             return None
         
         corr = numeric_df.corr()
-        fig = px.imshow(
-            corr,
-            text_auto=True,
-            title=kwargs.get('title', '相关性热力图'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white',
-            color_continuous_scale='RdBu_r'
-        )
-        fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
-        )
-        return fig
-    
-    @staticmethod
-    def _create_pie_chart(df, names_col, values_col, **kwargs):
-        """创建饼图"""
-        # 聚合数据
-        pie_data = df.groupby(names_col)[values_col].sum().reset_index()
+        show_values = config.get('show_values', True)
+        colorscale = config.get('colorscale', 'RdBu_r')
         
-        fig = px.pie(
-            pie_data,
-            names=names_col,
-            values=values_col,
-            title=kwargs.get('title', f'{names_col} 分布'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white'
-        )
+        if show_values:
+            fig = go.Figure(data=go.Heatmap(
+                z=corr.values,
+                x=corr.columns,
+                y=corr.index,
+                colorscale=colorscale,
+                text=corr.values.round(4),
+                texttemplate='%{text}',
+                textfont={"size": 10},
+                hoverongaps=False
+            ))
+        else:
+            fig = px.imshow(
+                corr,
+                text_auto=False,
+                title=config.get('title', '相关性热力图'),
+                color_continuous_scale=colorscale
+            )
+        
         fig.update_layout(
+            title=config.get('title', '相关性热力图'),
+            width=config.get('width'),
+            height=config.get('height', 500),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
         )
+        
         return fig
     
     @staticmethod
-    def _create_box_plot(df, x_col, y_col, **kwargs):
+    def _create_box_plot(df, x_col, y_col, config):
         """创建箱线图"""
         fig = px.box(
             df,
             x=x_col,
             y=y_col,
-            title=kwargs.get('title', f'{y_col} 分布箱线图'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white'
+            template=config.get('template', 'plotly_dark'),
+            points=config.get('points', 'outliers'),
+            notched=config.get('notched', False)
         )
+        
         fig.update_layout(
+            title=config.get('title', f'{y_col} 分布箱线图'),
+            width=config.get('width'),
+            height=config.get('height', 500),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
         )
+        
         return fig
     
     @staticmethod
-    def _create_histogram(df, x_col, **kwargs):
+    def _create_histogram(df, x_col, config):
         """创建直方图"""
-        bins = kwargs.get('bins', 30)
+        bins = config.get('nbins', 30)
+        
         fig = px.histogram(
             df,
             x=x_col,
             nbins=bins,
-            title=kwargs.get('title', f'{x_col} 分布直方图'),
-            template='plotly_dark' if st.session_state.theme_mode == 'dark' else 'plotly_white'
+            title=config.get('title', f'{x_col} 分布直方图'),
+            template=config.get('template', 'plotly_dark'),
+            histnorm=config.get('histnorm', '')
         )
+        
         fig.update_layout(
+            width=config.get('width'),
+            height=config.get('height', 500),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#E0E0E0' if st.session_state.theme_mode == 'dark' else '#333333')
         )
+        
         return fig
     
     @staticmethod
-    def _create_composite_pie(df, category_col, value_col, mode="子图布局", **kwargs):
-        """创建复合饼图（三种模式）"""
+    def _create_composite_pie(df, category_col, value_col, mode, config):
+        """创建复合饼图"""
         try:
-            # 获取顶层类别
             top_categories = df[category_col].value_counts().nlargest(4).index.tolist()
             
             if mode == "子图布局":
-                return ChartGenerator._composite_pie_subplot(df, category_col, value_col, top_categories)
+                return ChartGenerator._composite_pie_subplot(df, category_col, value_col, top_categories, config)
             elif mode == "交互下钻":
-                return ChartGenerator._composite_pie_drilldown(df, category_col, value_col, **kwargs)
+                return ChartGenerator._composite_pie_drilldown(df, category_col, value_col, config)
             elif mode == "复合定位":
-                return ChartGenerator._composite_pie_layout(df, category_col, value_col, top_categories)
+                return ChartGenerator._composite_pie_layout(df, category_col, value_col, top_categories, config)
             else:
                 return None
         except Exception as e:
             st.error(f"复合饼图生成失败: {str(e)}")
             return None
+    
+    # ... 其他复合饼图相关方法 ...
     
     @staticmethod
     def _composite_pie_subplot(df, category_col, value_col, top_categories):

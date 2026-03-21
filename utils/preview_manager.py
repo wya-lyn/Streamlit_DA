@@ -152,14 +152,20 @@ class PreviewManager:
         print(f"【调试-PreviewManager】update_chart_preview 被调用")
         print(f"【调试-PreviewManager】chart_type: {chart_type}")
         print(f"【调试-PreviewManager】fig 类型: {type(fig)}")
+        print(f"【调试-PreviewManager】fig 是否为 None: {fig is None}")
+        
+        # 验证 fig 是否有效
+        if fig is not None:
+            print(f"【调试-PreviewManager】fig 布局: {fig.layout.to_plotly_json() if hasattr(fig, 'layout') else '无布局'}")
         
         st.session_state.preview_mode = 'chart'
         st.session_state.preview_chart = {
             'figure': fig,
             'type': chart_type,
-            'timestamp': datetime.now()  # 【修复】使用导入的datetime
+            'timestamp': datetime.now()
         }
         print(f"【调试-PreviewManager】预览模式已设置为: chart")
+        print(f"【调试-PreviewManager】preview_chart 已保存")
     
     def get_chart_preview(self):
         """获取图表预览"""
@@ -174,8 +180,19 @@ class PreviewManager:
         
         chart = self.get_chart_preview()
         if chart and chart['figure'] is not None:
+            print(f"【调试-PreviewManager】找到图表，开始显示")
+            print(f"【调试-PreviewManager】图表类型: {chart.get('type', '未知')}")
+            print(f"【调试-PreviewManager】figure类型: {type(chart['figure'])}")
+            
             st.markdown(f"### {chart['type']}")
+            
+            # 【关键】直接显示图表
             st.plotly_chart(chart['figure'], use_container_width=True)
+            
+            print(f"【调试-PreviewManager】st.plotly_chart 已调用")
+            
+            # 添加一个临时确认
+            st.success("图表已加载")
             
             # 图表导出选项
             st.markdown("#### 图表导出")
@@ -200,6 +217,7 @@ class PreviewManager:
                     "生成时间": str(chart.get('timestamp', '未知'))
                 })
         else:
+            print(f"【调试-PreviewManager】没有图表可显示")
             st.info("暂无图表预览，请先在右侧面板生成图表")
     
     # ==================== 统一的预览显示 ====================
