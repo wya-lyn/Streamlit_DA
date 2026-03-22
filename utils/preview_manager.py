@@ -252,7 +252,10 @@ class PreviewManager:
     
     def clear_preview(self):
         """清空预览"""
-        st.session_state.preview_data = None
-        st.session_state.preview_stats = None
-        st.session_state.preview_chart = None
+        if 'preview_data' in st.session_state:
+            st.session_state.preview_data = None
+        if 'preview_stats' in st.session_state:
+            st.session_state.preview_stats = None
+        if 'preview_chart' in st.session_state:
+            st.session_state.preview_chart = None
         st.session_state.preview_mode = 'data'

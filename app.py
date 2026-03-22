@@ -23,7 +23,9 @@ from components.layout import LayoutManager
 from components.announcements import AnnouncementManager
 from components.footer import FooterManager
 from components.history_manager import HistoryManager
-from utils.chart_factory import ChartFactory
+from utils.chart_generator import ChartGenerator
+from components.data_processing import render_data_processing_tab
+from components.analysis_options import render_analysis_options_tab
 
 # ============================================
 # 页面配置
@@ -83,7 +85,7 @@ def init_session_state():
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "首页"
     if 'theme_mode' not in st.session_state:
-        st.session_state.theme_mode = 'dark'
+        st.session_state.theme_mode = 'light'
     
     # ===== 新增：筛选功能相关 =====
     if 'filter_history' not in st.session_state:
@@ -108,11 +110,12 @@ def init_session_state():
     if 'preview_manager' not in st.session_state:
         st.session_state.preview_manager = PreviewManager()
         print("【调试】preview_manager 已初始化")
-        # 【新增】图表工厂
-    if 'chart_factory' not in st.session_state:
-        from utils.chart_factory import ChartFactory
-        st.session_state.chart_factory = ChartFactory()
-        print("【调试】图表工厂已初始化")
+        # 添加缺失的键
+    if 'operation_history' not in st.session_state:
+        st.session_state.operation_history = []
+    
+    if 'history' not in st.session_state:
+        st.session_state.history = []
 
 # ============================================
 # 执行初始化
@@ -181,74 +184,89 @@ def render_theme_toggle():
             st.rerun()
 
 def render_file_uploader():
-    """文件上传组件（支持多工作表Excel）"""
-    st.markdown("### 📤 数据上传")
+    """文件上传组件（紧凑美观版）"""
     
     uploaded_file = st.file_uploader(
-        "选择文件",
+        "点击或拖拽文件到此处",
         type=['csv', 'xlsx', 'json'],
-        help="支持CSV、Excel、JSON格式，最大20MB",
-        key="file_uploader"
+        help="支持 CSV、Excel、JSON 格式，最大 20MB",
+        key="file_uploader",
+        label_visibility="collapsed"
     )
     
     if uploaded_file is None:
-        # 清除状态
-        if 'df' in st.session_state:
-            st.session_state.df = None
         return
+    
+    # 生成当前文件唯一标识
+    current_file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+    last_key = st.session_state.get('last_uploaded_file_key')
+    
+    # 重复上传同一文件
+    if last_key == current_file_key:
+        if st.session_state.df is not None:
+            st.info(f"📁 已加载: {uploaded_file.name}")
+        return
+    
+    # 新文件，清空旧数据
+    st.session_state.df = None
+    st.session_state.original_df = None
+    
+    # 清除 Excel 相关状态
+    if 'sheet_selected' in st.session_state:
+        del st.session_state.sheet_selected
+    if 'sheet_loaded' in st.session_state:
+        del st.session_state.sheet_loaded
+    
+    # 清除预览状态
+    st.session_state.preview_manager.clear_preview()
     
     file_extension = uploaded_file.name.split('.')[-1].lower()
     
-    # 处理Excel多工作表
+    # 处理 Excel 多工作表
     if file_extension in ['xlsx', 'xls']:
         import pandas as pd
         
-        # 获取所有工作表名称
         xl = pd.ExcelFile(uploaded_file)
         sheet_names = xl.sheet_names
         
         if len(sheet_names) > 1:
             st.info(f"📑 检测到 {len(sheet_names)} 个工作表")
             
-            # 使用 session_state 保存确认状态
             if 'sheet_selected' not in st.session_state:
                 st.session_state.sheet_selected = sheet_names[0]
             if 'sheet_loaded' not in st.session_state:
                 st.session_state.sheet_loaded = False
             
-            # 工作表选择下拉框
             selected_sheet = st.selectbox(
-                "请选择要加载的工作表",
+                "选择工作表",
                 sheet_names,
                 key="excel_sheet_selector",
-                index=sheet_names.index(st.session_state.sheet_selected)
+                index=sheet_names.index(st.session_state.sheet_selected),
+                label_visibility="collapsed"
             )
             st.session_state.sheet_selected = selected_sheet
             
-            # 确认加载按钮
-            if st.button("✅ 确认加载", key="confirm_sheet_load", use_container_width=True, type="primary"):
-                with st.spinner(f"正在加载工作表: {selected_sheet}..."):
-                    df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.button("✅ 确认", key="confirm_sheet_load", use_container_width=True, type="primary"):
                     st.session_state.sheet_loaded = True
+                    st.rerun()
+            
+            if not st.session_state.sheet_loaded:
+                st.caption("请选择工作表后点击确认")
+                return
             else:
-                # 未确认，不加载
-                if not st.session_state.sheet_loaded:
-                    st.info("请选择工作表后点击「确认加载」按钮")
-                    return
-                else:
-                    df = pd.read_excel(uploaded_file, sheet_name=st.session_state.sheet_selected)
+                df = pd.read_excel(uploaded_file, sheet_name=st.session_state.sheet_selected)
         else:
             df = pd.read_excel(uploaded_file, sheet_name=sheet_names[0])
     else:
         df = managers['file_loader'].load_file(uploaded_file)
     
-    # 处理加载的数据
     if df is not None:
-        df = df.fillna("null")
         df = df.reset_index(drop=True)
-        
         st.session_state.df = df
         st.session_state.original_df = df.copy()
+        st.session_state.last_uploaded_file_key = current_file_key
         managers['history'].add_to_history("上传文件", df)
         
         # 清除工作表选择状态
@@ -284,337 +302,11 @@ def render_right_panel():
             with tabs[2]:
                 render_ai_config_tab()
 
-# ============================================
-# 数据处理标签页（所有功能独立封装）
-# ============================================
-def render_data_processing_tab():
-    """数据处理标签页"""
-    if st.session_state.df is None:
-        st.info("请先上传数据")
-        return
-    
-    # 全局操作栏
-    st.markdown("### ⚡ 全局操作")
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
-    with col1:
-        if st.button("↩️ 撤销", key="global_undo", use_container_width=True):
-            undo_last_operation()
-    with col2:
-        if st.button("↪️ 重做", key="global_redo", use_container_width=True):
-            redo_last_operation()
-    with col3:
-        if st.button("📋 历史", key="global_history", use_container_width=True):
-            show_global_history()
-    
-    st.divider()
-    
-    # 数据清洗（8个标签页）
-    st.markdown("### 🧹 数据清洗")
-    clean_tabs = st.tabs(["🗑️ 去重", "🔄 替换", "📝 转换", "✂️ 分列", "🔗 合并", "✏️ 表头", "🔍 筛选", "🗑️ 删除"])
-    
-    with clean_tabs[0]:
-        render_deduplicate_section()
-    
-    with clean_tabs[1]:
-        render_replace_value_section()
-    
-    with clean_tabs[2]:
-        render_convert_type_section()
-    
-    with clean_tabs[3]:
-        render_split_column_section()
-    
-    with clean_tabs[4]:
-        render_merge_columns_section()
-    
-    with clean_tabs[5]:  # 新增：修改表头
-        render_rename_columns_section()
-    
-    with clean_tabs[6]:  # 筛选（原第6个变为第8个）
-        render_filter_section_in_tab()
-    
-    with clean_tabs[7]:  # 删除（原第5个变为第7个）
-        
-        render_delete_columns_section()
-    
-    st.divider()
-    
-    # 数据确认
-    render_confirm_data_button()
-    
-# ============================================
 # 统一筛选功能（放在这里）
 # ============================================
 
-def render_rename_columns_section():
-    """修改表头功能"""
-    st.write("修改列名称（表头）")
-    
-    # 获取当前所有列名
-    current_columns = st.session_state.df.columns.tolist()
-    
-    # 显示当前列名
-    st.markdown("**当前列名**")
-    col_df = pd.DataFrame({
-        '序号': range(1, len(current_columns) + 1),
-        '当前列名': current_columns
-    })
-    st.dataframe(col_df, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # 修改方式选择
-    rename_mode = st.radio(
-        "选择修改方式",
-        ["单个修改", "批量添加前缀/后缀", "批量替换文本", "批量修改（编辑表格）"],
-        key="rename_mode",
-        horizontal=True
-    )
-    
-    # 方式一：单个修改
-    if rename_mode == "单个修改":
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            old_name = st.selectbox("选择要修改的列", current_columns, key="rename_single_old")
-        
-        with col2:
-            new_name = st.text_input("新列名", value=old_name, key="rename_single_new")
-        
-        if st.button("✏️ 应用修改", key="btn_rename_single", use_container_width=True):
-            if new_name and new_name != old_name:
-                if new_name in current_columns and new_name != old_name:
-                    st.warning(f"列名 '{new_name}' 已存在，请使用其他名称")
-                else:
-                    # 执行重命名
-                    new_columns = [new_name if col == old_name else col for col in current_columns]
-                    st.session_state.df.columns = new_columns
-                    st.session_state.preview_manager.record_operation(f"修改表头: {old_name}→{new_name}")
-                    managers['history'].add_to_history("修改表头", st.session_state.df)
-                    st.success(f"已将 '{old_name}' 修改为 '{new_name}'")
-                    st.rerun()
-            else:
-                st.warning("请输入新列名")
-    
-    # 方式二：批量添加前缀/后缀
-    elif rename_mode == "批量添加前缀/后缀":
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            prefix = st.text_input("添加前缀", key="rename_prefix", placeholder="留空则不添加")
-        
-        with col2:
-            suffix = st.text_input("添加后缀", key="rename_suffix", placeholder="留空则不添加")
-        
-        # 预览效果
-        if prefix or suffix:
-            preview_cols = []
-            for col in current_columns[:5]:
-                new_col = col
-                if prefix:
-                    new_col = prefix + new_col
-                if suffix:
-                    new_col = new_col + suffix
-                preview_cols.append(new_col)
-            
-            st.caption(f"预览效果: {', '.join(preview_cols)}{'...' if len(current_columns) > 5 else ''}")
-        
-        if st.button("✏️ 批量添加", key="btn_rename_prefix_suffix", use_container_width=True):
-            if not prefix and not suffix:
-                st.warning("请至少输入前缀或后缀")
-            else:
-                new_columns = []
-                for col in current_columns:
-                    new_col = col
-                    if prefix:
-                        new_col = prefix + new_col
-                    if suffix:
-                        new_col = new_col + suffix
-                    new_columns.append(new_col)
-                
-                st.session_state.df.columns = new_columns
-                st.session_state.preview_manager.record_operation(f"批量添加: 前缀='{prefix}' 后缀='{suffix}'")
-                managers['history'].add_to_history("修改表头", st.session_state.df)
-                st.success("批量添加完成")
-                st.rerun()
-    
-    # 方式三：批量替换文本
-    elif rename_mode == "批量替换文本":
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            old_text = st.text_input("查找内容", key="rename_replace_old")
-        
-        with col2:
-            new_text = st.text_input("替换为", key="rename_replace_new")
-        
-        # 预览效果
-        if old_text:
-            preview_cols = []
-            for col in current_columns[:5]:
-                new_col = col.replace(old_text, new_text)
-                preview_cols.append(new_col)
-            st.caption(f"预览效果: {', '.join(preview_cols)}{'...' if len(current_columns) > 5 else ''}")
-        
-        if st.button("✏️ 批量替换", key="btn_rename_replace", use_container_width=True):
-            if not old_text:
-                st.warning("请输入要查找的内容")
-            else:
-                new_columns = [col.replace(old_text, new_text) for col in current_columns]
-                st.session_state.df.columns = new_columns
-                st.session_state.preview_manager.record_operation(f"批量替换: '{old_text}'→'{new_text}'")
-                managers['history'].add_to_history("修改表头", st.session_state.df)
-                st.success("批量替换完成")
-                st.rerun()
-    
-    # 方式四：批量修改（编辑表格）
-    else:
-        st.markdown("**编辑表格修改列名**")
-        st.caption("双击单元格直接编辑，支持批量修改")
-        
-        # 创建可编辑表格
-        edit_df = pd.DataFrame({
-            '当前列名': current_columns,
-            '新列名': current_columns.copy()
-        })
-        
-        edited_df = st.data_editor(
-            edit_df,
-            use_container_width=True,
-            num_rows="fixed",
-            key="rename_editor",
-            column_config={
-                "当前列名": st.column_config.TextColumn("当前列名", disabled=True),
-                "新列名": st.column_config.TextColumn("新列名", required=True)
-            }
-        )
-        
-        # 检查是否有重复
-        new_names = edited_df['新列名'].tolist()
-        has_duplicate = len(new_names) != len(set(new_names))
-        
-        if has_duplicate:
-            st.error("新列名存在重复，请修改后重试")
-        else:
-            # 显示修改预览
-            changes = []
-            for old, new in zip(current_columns, new_names):
-                if old != new:
-                    changes.append(f"'{old}' → '{new}'")
-            
-            if changes:
-                st.info(f"将修改 {len(changes)} 个列名")
-                with st.expander("查看修改详情"):
-                    for change in changes[:10]:
-                        st.write(f"• {change}")
-                    if len(changes) > 10:
-                        st.write(f"...等{len(changes)}个修改")
-        
-        if st.button("✏️ 应用所有修改", key="btn_rename_batch", use_container_width=True):
-            if has_duplicate:
-                st.error("请先解决重复列名问题")
-            else:
-                st.session_state.df.columns = new_names
-                st.session_state.preview_manager.record_operation("批量修改表头")
-                managers['history'].add_to_history("修改表头", st.session_state.df)
-                st.success(f"已修改 {len([c for c in changes if c])} 个列名")
-                st.rerun()
 
-def render_filter_section_in_tab():
-    """筛选功能（作为完整的标签页显示）"""
-    
-    # 筛选历史快捷操作（放在顶部）
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        if st.button("↩️ 撤销筛选", key="undo_filter_tab", use_container_width=True):
-            undo_last_operation()  # 改为使用全局撤销
-    with col2:
-        if st.button("🔄 重置", key="reset_filter_tab", use_container_width=True):
-            reset_to_original()  # 这个函数如果存在就保留
-    with col3:
-        if st.button("📋 筛选历史", key="filter_history_tab", use_container_width=True):
-            show_global_history()  # 改为使用全局历史
-    
-    st.markdown("---")
-    
-    # 筛选主界面
-    st.markdown("#### 设置筛选条件")
-    
-    # 选择列
-    all_cols = ["请选择要筛选的列"] + st.session_state.df.columns.tolist()
-    selected_col = st.selectbox(
-        "选择列",
-        all_cols,
-        key="filter_column_tab",
-        index=0
-    )
-    
-    if selected_col != "请选择要筛选的列":
-        # 获取列的数据类型
-        col_dtype = st.session_state.df[selected_col].dtype
-        is_numeric = pd.api.types.is_numeric_dtype(col_dtype)
-        is_datetime = pd.api.types.is_datetime64_any_dtype(col_dtype)
-        
-        # 根据数据类型提供不同的条件选项
-        if is_numeric:
-            conditions = ["等于", "不等于", "大于", "小于", "大于等于", "小于等于", "介于", "为空", "不为空"]
-        elif is_datetime:
-            conditions = ["等于", "不等于", "早于", "晚于", "介于", "今天", "本周", "本月", "为空", "不为空"]
-        else:
-            conditions = ["包含", "不包含", "等于", "不等于", "开头为", "结尾为", "为空", "不为空"]
-        
-        # 使用列布局让界面更紧凑
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            condition = st.selectbox("条件", conditions, key="filter_condition_tab")
-        with col2:
-            # 根据条件类型提供不同的输入界面
-            filter_value = None
-            
-            if condition not in ["为空", "不为空", "今天", "本周", "本月"]:
-                if condition == "介于":
-                    subcol1, subcol2 = st.columns(2)
-                    with subcol1:
-                        if is_numeric:
-                            min_val = st.number_input("最小值", key="filter_min_tab")
-                        else:
-                            min_val = st.text_input("开始值", key="filter_min_tab")
-                    with subcol2:
-                        if is_numeric:
-                            max_val = st.number_input("最大值", key="filter_max_tab")
-                        else:
-                            max_val = st.text_input("结束值", key="filter_max_tab")
-                    filter_value = (min_val, max_val)
-                else:
-                    if is_numeric and condition not in ["包含", "不包含", "开头为", "结尾为"]:
-                        filter_value = st.number_input("筛选值", key="filter_value_tab")
-                    else:
-                        filter_value = st.text_input("筛选值", key="filter_value_tab")
-        
-        # 操作按钮
-        col1, col2, col3 = st.columns([1, 1, 2])
-        with col1:
-            if st.button("🔍 预览结果", key="preview_filter_tab", use_container_width=True):
-                preview_unified_filter(selected_col, condition, filter_value)
-        with col2:
-            if st.button("✅ 应用筛选", key="apply_filter_tab", use_container_width=True, type="primary"):
-                apply_unified_filter(selected_col, condition, filter_value)
-        with col3:
-            st.write("")  # 占位
-    
-    # 预览结果显示
-    if 'filter_preview' in st.session_state and st.session_state.filter_preview is not None:
-        st.markdown("---")
-        st.markdown("### 👁️ 预览结果")
-        if 'filter_preview_info' in st.session_state:
-            st.info(st.session_state.filter_preview_info)
-        st.dataframe(st.session_state.filter_preview, use_container_width=True)
-        
-        if st.button("关闭预览", key="close_filter_preview_tab"):
-            st.session_state.filter_preview = None
-            st.session_state.filter_preview_info = None
-            st.rerun()
-                
+       
 def undo_last_operation():
     """全局撤销操作"""
     if st.session_state.df is not None:
@@ -786,15 +478,6 @@ def apply_unified_filter(column, condition, value):
     except Exception as e:
         st.error(f"筛选失败: {str(e)}")
 
-def render_confirm_data_button():
-    """确认使用本数据按钮"""
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("### 确认数据")
-        st.caption("点击确认后，当前数据将作为分析基准")
-    with col2:
-        if st.button("✅ 确认使用本数据", key="confirm_data", type="primary", use_container_width=True):
-            confirm_current_data()
 
 def confirm_current_data():
     """确认当前数据"""
@@ -804,264 +487,6 @@ def confirm_current_data():
     
     # 记录确认操作
     st.session_state.preview_manager.record_operation("数据确认")
-
-
-
-def render_deduplicate_section():
-    """去重功能"""
-    with st.expander("🗑️ 去重", expanded=False):
-        st.write("删除重复行")
-        
-        subset_cols = st.multiselect(
-            "选择列（留空则基于所有列）", 
-            st.session_state.df.columns,
-            key="dedup_cols"
-        )
-        
-        keep_option = st.selectbox(
-            "保留方式",
-            ["保留第一个", "保留最后一个", "全部删除"],
-            key="dedup_keep"
-        )
-        
-        keep_map = {
-            "保留第一个": "first",
-            "保留最后一个": "last",
-            "全部删除": False
-        }
-        
-        if st.button("✅ 执行去重", key="btn_dedup", use_container_width=True):
-            success, message = execute_data_operation(
-                managers['data_cleaner'].deduplicate,
-                "去重",
-                subset=subset_cols if subset_cols else None,
-                keep=keep_map[keep_option]
-            )
-            if success:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-
-def render_replace_value_section():
-    """替换值功能"""
-    with st.expander("🔄 替换值", expanded=False):
-        col = st.selectbox(
-            "选择列", 
-            st.session_state.df.columns, 
-            key="replace_col"
-        )
-        
-        mode = st.radio(
-            "替换方式", 
-            ["文本替换", "正则替换", "空值替换"], 
-            key="replace_mode",
-            horizontal=True
-        )
-        
-        if mode == "文本替换":
-            old = st.text_input("查找内容", key="replace_old")
-            new = st.text_input("替换为", key="replace_new")
-            
-            if st.button("✅ 执行文本替换", key="btn_replace", use_container_width=True):
-                success, message = execute_data_operation(
-                    managers['data_cleaner'].text_replace,
-                    "文本替换",
-                    col, old, new
-                )
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-        
-        elif mode == "正则替换":
-            pattern = st.text_input("正则表达式", key="replace_pattern")
-            replacement = st.text_input("替换为", key="replace_replacement")
-            
-            if st.button("✅ 执行正则替换", key="btn_regex_replace", use_container_width=True):
-                success, message = execute_data_operation(
-                    managers['data_cleaner'].text_replace,
-                    "正则替换",
-                    col, pattern, replacement, regex=True
-                )
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-        
-        else:  # 空值替换
-            fill_value = st.text_input("填充值", "", key="replace_fill")
-            
-            if st.button("✅ 执行空值替换", key="btn_null_replace", use_container_width=True):
-                success, message = execute_data_operation(
-                    managers['data_cleaner'].null_replace,
-                    "空值替换",
-                    col, fill_value
-                )
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-def render_convert_type_section():
-    """类型转换功能"""
-    with st.expander("📝 类型转换", expanded=False):
-        col = st.selectbox(
-            "选择列", 
-            st.session_state.df.columns, 
-            key="convert_col"
-        )
-        
-        target_type = st.radio(
-            "转换类型", 
-            ["转换为文本", "转换为数值"], 
-            key="convert_type",
-            horizontal=True
-        )
-        
-        if st.button("✅ 执行转换", key="btn_convert", use_container_width=True):
-            success, message = execute_data_operation(
-                managers['data_cleaner'].convert_type,
-                "类型转换",
-                col, target_type
-            )
-            if success:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-
-def render_split_column_section():
-    """分列功能"""
-    with st.expander("✂️ 分列", expanded=False):
-        col = st.selectbox(
-            "选择列", 
-            st.session_state.df.columns, 
-            key="split_col"
-        )
-        
-        mode = st.radio(
-            "分列方式", 
-            ["最左分隔符", "最右分隔符"], 
-            key="split_mode",
-            horizontal=True
-        )
-        
-        separator = st.text_input("分隔符", ",", key="split_sep")
-        
-        # 预览分列效果
-        if st.button("👁️ 预览分列", key="preview_split", use_container_width=True):
-            preview_df = st.session_state.df.head(3).copy()
-            preview_result = managers['data_cleaner'].split_column(
-                preview_df, col, separator, mode
-            )
-            st.write("预览结果（前3行）：")
-            st.dataframe(preview_result, use_container_width=True)
-            new_cols = [c for c in preview_result.columns if c not in st.session_state.df.columns]
-            if new_cols:
-                st.info(f"将新增列: {', '.join(new_cols)}")
-        
-        if st.button("✅ 执行分列", key="btn_split", use_container_width=True):
-            success, message = execute_data_operation(
-                managers['data_cleaner'].split_column,
-                "分列",
-                col, separator, mode
-            )
-            if success:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-
-def render_merge_columns_section():
-    """合并列功能"""
-    with st.expander("🔗 合并列", expanded=False):
-        st.write("将多列合并为一列")
-        
-        merge_cols = st.multiselect(
-            "选择要合并的列（按顺序选择）", 
-            st.session_state.df.columns,
-            key="merge_cols"
-        )
-        
-        if len(merge_cols) >= 2:
-            col1, col2 = st.columns(2)
-            with col1:
-                separator = st.text_input("分隔符", value=" ", key="merge_sep")
-            with col2:
-                merge_position = st.radio(
-                    "合并后位置",
-                    ["保留原列", "删除原列"],
-                    key="merge_position",
-                    horizontal=True
-                )
-            
-            new_col_name = st.text_input(
-                "新列名", 
-                value="_".join(merge_cols)[:30],
-                key="new_col_name"
-            )
-            
-            # 预览合并效果
-            if st.button("👁️ 预览合并", key="preview_merge", use_container_width=True):
-                preview_df = st.session_state.df.head(3).copy()
-                preview_df = managers['data_cleaner'].merge_columns(
-                    preview_df, merge_cols, new_col_name, separator
-                )
-                st.write("预览结果（前3行）：")
-                st.dataframe(preview_df[[new_col_name] + merge_cols], use_container_width=True)
-            
-            # 执行合并
-            if st.button("✅ 执行合并", key="btn_merge", use_container_width=True):
-                # 先执行合并
-                success, message = execute_data_operation(
-                    managers['data_cleaner'].merge_columns,
-                    "合并列",
-                    merge_cols, new_col_name, separator
-                )
-                
-                if success:
-                    # 根据选择决定是否删除原列
-                    if merge_position == "删除原列":
-                        st.session_state.df = st.session_state.df.drop(columns=merge_cols)
-                        st.session_state.preview_manager.record_operation("删除原列")
-                    
-                    st.success(f"合并完成，新增列：{new_col_name}")
-                    st.rerun()
-                else:
-                    st.error(message)
-        else:
-            st.info("请至少选择2列进行合并")
-def render_delete_columns_section():
-    """删除列功能"""
-    st.write("删除指定的列")
-    
-    cols_to_delete = st.multiselect(
-        "选择要删除的列", 
-        st.session_state.df.columns,
-        key="delete_cols_section"
-    )
-    
-    if cols_to_delete:
-        # 显示预览信息
-        st.caption(f"将删除 {len(cols_to_delete)} 列: {', '.join(cols_to_delete)}")
-        
-        if st.button("🗑️ 执行删除", key="btn_delete_section", use_container_width=True, type="primary"):
-            success, message = execute_data_operation(
-                managers['data_cleaner'].delete_columns,
-                "删除列",
-                cols_to_delete
-            )
-            if success:
-                st.success(message)
-                st.rerun()
-            else:
-                st.error(message)
-    else:
-        st.info("请选择要删除的列")
 
 # ============================================
 # 数据筛选标签页
@@ -1089,158 +514,7 @@ def reset_to_original():
 # ============================================
 # 分析选项标签页
 # ============================================
-def render_analysis_options_tab():
-    """分析选项标签页（整合统计和图表）"""
-    if st.session_state.df is None:
-        st.info("请先上传数据")
-        return
-    
-    # 使用tabs组织不同类型的分析（增加复合饼图）
-    analysis_tabs = st.tabs([
-        "📈 描述性统计", 
-        "🔗 相关性分析", 
-        "📊 分组统计", 
-        "⏱️ 时间序列", 
-        "📐 数据透视表",
-        "🥧 复合饼图"  # 新增复合饼图标签页
-    ])
-    
-    with analysis_tabs[0]:
-        render_descriptive_stats_with_chart()
-    
-    with analysis_tabs[1]:
-        render_correlation_with_heatmap()
-    
-    with analysis_tabs[2]:
-        render_group_stats_with_chart()
-    
-    with analysis_tabs[3]:
-        render_time_series_with_chart()
-    
-    with analysis_tabs[4]:
-        render_pivot_with_chart()
-    
-    with analysis_tabs[5]:  # 复合饼图
-        render_composite_pie_chart()
-        
-def render_composite_pie_chart():
-    """复合饼图（三种模式）"""
-    st.markdown("#### 🥧 复合饼图")
-    
-    # 获取分类列和数值列
-    category_cols = st.session_state.df.select_dtypes(include=['object']).columns.tolist()
-    numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
-    if not category_cols:
-        st.warning("需要分类列才能生成复合饼图")
-        return
-    
-    if not numeric_cols:
-        st.warning("需要数值列才能生成复合饼图")
-        return
-    
-    # 基本设置
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        category_col = st.selectbox(
-            "选择分类列（主类别）",
-            category_cols,
-            key="composite_cat_col"
-        )
-    
-    with col2:
-        value_col = st.selectbox(
-            "选择数值列",
-            numeric_cols,
-            key="composite_val_col"
-        )
-    
-    # 复合饼图模式选择
-    st.markdown("##### 选择模式")
-    pie_mode = st.radio(
-        "复合饼图模式",
-        ["子图布局", "交互下钻", "复合定位"],
-        key="composite_pie_mode",
-        horizontal=True,
-        help="""
-        - 子图布局：网格展示主图和子图
-        - 交互下钻：点击主图区块查看详情
-        - 复合定位：预设模板布局
-        """
-    )
-    
-    # 模式说明
-    if pie_mode == "子图布局":
-        st.info("📊 子图布局模式：主图在左上角，其他子图按网格排列，适合对比分析多个类别")
-    elif pie_mode == "交互下钻":
-        st.info("🖱️ 交互下钻模式：点击主图区块，下方显示该区块的详细构成，适合层级探索")
-    else:
-        st.info("🎯 复合定位模式：主图居中，子图按预设位置环绕，适合报告展示")
-    
-    # 高级选项
-    with st.expander("高级选项"):
-        max_categories = st.slider(
-            "最大显示类别数",
-            min_value=3,
-            max_value=10,
-            value=5,
-            key="composite_max_cat",
-            help="主图显示的类别数量，其余归为'其他'"
-        )
-        
-        show_title = st.checkbox("显示图表标题", value=True, key="composite_title")
-        
-        if pie_mode == "子图布局":
-            chart_height = st.slider(
-                "图表高度",
-                min_value=400,
-                max_value=1000,
-                value=800,
-                step=50,
-                key="composite_height"
-            )
-    
-    # 生成图表按钮
-    if st.button("🎨 生成复合饼图", key="btn_composite_pie", use_container_width=True, type="primary"):
-        with st.spinner(f"正在生成{pie_mode}复合饼图..."):
-            try:
-                # 调用 chart_generator 中的复合饼图函数
-                fig = managers['chart_generator'].create_chart(
-                    df=st.session_state.df,
-                    chart_type="复合饼图",
-                    x_col=category_col,  # 分类列
-                    y_col=value_col,      # 数值列
-                    pie_mode=pie_mode,    # 模式选择
-                    max_categories=max_categories,
-                    title=f"{category_col}分布" if show_title else None
-                )
-                
-                if fig:
-                    st.session_state.preview_manager.update_chart_preview(
-                        fig,
-                        f"复合饼图-{pie_mode}"
-                    )
-                    st.success(f"{pie_mode}复合饼图已生成，请查看主内容区")
-                    st.rerun()
-                else:
-                    st.error("图表生成失败，请检查数据")
-            except Exception as e:
-                st.error(f"生成失败: {str(e)}")
-    
-    # 数据预览
-    with st.expander("查看数据分布"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("##### 类别分布")
-            category_counts = st.session_state.df[category_col].value_counts().head(max_categories)
-            st.dataframe(category_counts.reset_index(), use_container_width=True)
-        
-        with col2:
-            st.markdown("##### 数值汇总")
-            category_sums = st.session_state.df.groupby(category_col)[value_col].sum().sort_values(ascending=False).head(max_categories)
-            st.dataframe(category_sums.reset_index(), use_container_width=True)
+   
 
 def get_pie_mode_description(mode):
     """获取复合饼图模式说明"""
@@ -1251,989 +525,10 @@ def get_pie_mode_description(mode):
     }
     return descriptions.get(mode, "")
 
-# def render_descriptive_stats_with_chart():
-#     """
-#     描述性统计 + 图表功能
-#     ===================================
-#     这是一个【完整版】函数，包含：
-#     1. 列选择（数值列/文本列）
-#     2. 统计指标选择
-#     3. 图表类型选择
-#     4. 【测试按钮】用于诊断
-#     5. 【生产按钮】已启用
-#     6. 调试信息面板
-#     ===================================
-#     """
-    
-#     st.markdown("#### 描述性统计")
-    
-#     # ===========================================
-#     # 第一部分：获取列信息
-#     # ===========================================
-#     all_cols = st.session_state.df.columns.tolist()
-#     numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-#     category_cols = st.session_state.df.select_dtypes(include=['object']).columns.tolist()
-    
-#     if not all_cols:
-#         st.warning("没有数据可供统计")
-#         return
-    
-#     # ===========================================
-#     # 第二部分：列选择
-#     # ===========================================
-#     col_options = []
-#     for col in all_cols:
-#         if col in numeric_cols:
-#             col_options.append(f"🔢 {col} (数值)")
-#         else:
-#             col_options.append(f"📝 {col} (文本)")
-    
-#     col_map = {f"🔢 {col} (数值)": col for col in numeric_cols}
-#     col_map.update({f"📝 {col} (文本)": col for col in category_cols})
-    
-#     selected_display = st.multiselect(
-#         "选择要分析的列",
-#         col_options,
-#         key="desc_cols_main",
-#         placeholder="请选择要分析的列"
-#     )
-    
-#     selected_cols = [col_map[disp] for disp in selected_display if disp in col_map]
-    
-#     if not selected_cols:
-#         st.info("请选择要分析的列")
-#         return
-    
-#     # ===========================================
-#     # 第三部分：分离数值列和文本列
-#     # ===========================================
-#     selected_numeric = [col for col in selected_cols if col in numeric_cols]
-#     selected_category = [col for col in selected_cols if col in category_cols]
-    
-#     # ===========================================
-#     # 第四部分：统计选项和图表选项
-#     # ===========================================
-#     col_left, col_right = st.columns(2)
-    
-#     with col_left:
-#         st.markdown("##### 统计选项")
-        
-#         # 数值列统计指标
-#         numeric_stats = []
-#         if selected_numeric:
-#             st.markdown("**数值列统计**")
-#             numeric_stats = st.multiselect(
-#                 "选择数值统计指标",
-#                 ["均值", "中位数", "众数", "标准差", "方差", "最小值", "最大值", 
-#                  "极差", "偏度", "峰度", "25%分位数", "50%分位数", "75%分位数", "缺失值"],
-#                 key="numeric_stats_main",
-#                 placeholder="请选择数值统计指标"
-#             )
-        
-#         # 文本列统计指标
-#         category_stats = []
-#         if selected_category:
-#             st.markdown("**文本列统计**")
-#             category_stats = st.multiselect(
-#                 "选择文本统计指标",
-#                 ["计数", "唯一值数", "最频繁值", "缺失值"],
-#                 key="category_stats_main",
-#                 placeholder="请选择文本统计指标"
-#             )
-    
-#     with col_right:
-#         st.markdown("##### 图表选项")
-        
-#         # 图表类型选择
-#         chart_options = ["请选择图表类型"]
-#         if selected_numeric:
-#             chart_options.extend(["柱状图", "箱线图", "直方图"])
-#         if selected_category:
-#             chart_options.extend(["条形图", "饼图"])
-        
-#         chart_type = st.selectbox(
-#             "选择图表类型",
-#             chart_options,
-#             key="chart_type_main",
-#             index=0
-#         )
-        
-#         # 直方图特殊参数
-#         bins = 20
-#         if chart_type == "直方图" and selected_numeric:
-#             bins = st.slider("分组数", min_value=5, max_value=50, value=20, key="hist_bins_main")
-    
-#     # ===========================================
-#     # 第五部分：状态计算
-#     # ===========================================
-#     has_stats = (selected_numeric and numeric_stats) or (selected_category and category_stats)
-#     chart_ready = chart_type != "请选择图表类型"
-    
-#     # ===========================================
-#     # 第六部分：【测试按钮】（保留用于诊断）
-#     # ===========================================
-#     st.markdown("---")
-#     st.markdown("##### 🧪 测试模式（用于诊断）")
-    
-#     col_test1, col_test2 = st.columns(2)
-    
-#     with col_test1:
-#         if st.button("🧪 [测试] 生成统计表", key="test_stats_btn", use_container_width=True):
-#             with st.spinner("正在生成测试统计表..."):
-#                 try:
-#                     import pandas as pd
-#                     test_data = {}
-#                     for col in selected_cols:
-#                         test_data[col] = [len(st.session_state.df[col])]
-#                     test_df = pd.DataFrame(test_data, index=['计数值'])
-                    
-#                     st.session_state.preview_manager.update_stats_preview(
-#                         test_df,
-#                         f"【测试】统计结果 ({', '.join(selected_cols[:2])})"
-#                     )
-#                     st.session_state.preview_mode = 'stats'
-#                     st.session_state.current_page = "📊 数据分析"
-#                     st.rerun()
-#                 except Exception as e:
-#                     st.error(f"测试失败: {str(e)}")
-    
-#     with col_test2:
-#         if st.button("🧪 [测试] 生成图表", key="test_chart_btn", use_container_width=True):
-#             with st.spinner("正在生成测试图表..."):
-#                 try:
-#                     import plotly.express as px
-#                     import pandas as pd
-#                     test_data = pd.DataFrame({'类别': ['A', 'B', 'C', 'D'], '数值': [10, 20, 15, 25]})
-#                     fig = px.bar(test_data, x='类别', y='数值', title="【测试】条形图")
-                    
-#                     st.session_state.preview_manager.update_chart_preview(fig, "【测试】图表")
-#                     st.session_state.preview_mode = 'chart'
-#                     st.session_state.current_page = "📈 可视化"
-#                     st.rerun()
-#                 except Exception as e:
-#                     st.error(f"测试失败: {str(e)}")
-    
-#     # ===========================================
-#     # 第七部分：【生产模式按钮】已启用
-#     # ===========================================
-#     st.markdown("---")
-#     st.markdown("##### 📦 生产模式")
-    
-#     col_prod1, col_prod2 = st.columns(2)
-    
-#     with col_prod1:
-#         if st.button("📊 生成统计表", key="prod_stats", use_container_width=True, disabled=not has_stats):
-#             if not has_stats:
-#                 st.warning("请先选择统计指标")
-#             else:
-#                 with st.spinner("正在生成统计表..."):
-#                     try:
-#                         import pandas as pd
-#                         results = {}
-                        
-#                         # 处理数值列
-#                         if selected_numeric and numeric_stats:
-#                             stats_df = managers['stats_analyzer'].descriptive_stats(
-#                                 st.session_state.df[selected_numeric]
-#                             )
-#                             if stats_df is not None and not stats_df.empty:
-#                                 available_stats = [s for s in numeric_stats if s in stats_df.columns]
-#                                 if available_stats:
-#                                     results["数值统计"] = stats_df[available_stats]
-                        
-#                         # 处理文本列
-#                         if selected_category and category_stats:
-#                             cat_results = {}
-#                             for col in selected_category:
-#                                 cat_stats = {}
-#                                 if "计数" in category_stats:
-#                                     cat_stats["计数"] = len(st.session_state.df[col])
-#                                 if "唯一值数" in category_stats:
-#                                     cat_stats["唯一值数"] = st.session_state.df[col].nunique()
-#                                 if "最频繁值" in category_stats:
-#                                     cat_stats["最频繁值"] = st.session_state.df[col].mode().iloc[0] if not st.session_state.df[col].mode().empty else "N/A"
-#                                 if "缺失值" in category_stats:
-#                                     cat_stats["缺失值"] = st.session_state.df[col].isna().sum()
-#                                 cat_results[col] = cat_stats
-#                             results["文本统计"] = pd.DataFrame(cat_results).T
-                        
-#                         if results:
-#                             if len(results) == 1:
-#                                 result_df = list(results.values())[0]
-#                             else:
-#                                 result_df = pd.concat(results, axis=1)
-                            
-#                             st.session_state.preview_manager.update_stats_preview(
-#                                 result_df,
-#                                 f"描述性统计 ({', '.join(selected_cols[:3])}{'...' if len(selected_cols)>3 else ''})"
-#                             )
-#                             st.session_state.preview_mode = 'stats'
-#                             st.session_state.current_page = "📊 数据分析"
-#                             st.rerun()
-#                         else:
-#                             st.warning("没有生成任何统计结果")
-                            
-#                     except Exception as e:
-#                         st.error(f"统计表生成失败: {str(e)}")
-    
-#     with col_prod2:
-#         if st.button("📈 生成图表", key="prod_chart", use_container_width=True, disabled=not chart_ready):
-#             if not chart_ready:
-#                 st.warning("请先选择图表类型")
-#             else:
-#                 with st.spinner("正在生成图表..."):
-#                     try:
-#                         import plotly.express as px
-#                         import pandas as pd
-                        
-#                         for col in selected_cols:
-#                             fig = None
-                            
-#                             if col in numeric_cols:
-#                                 if chart_type == "柱状图":
-#                                     fig = managers['chart_generator'].create_chart(
-#                                         st.session_state.df, "柱状图", col, col
-#                                     )
-#                                 elif chart_type == "箱线图":
-#                                     fig = managers['chart_generator'].create_chart(
-#                                         st.session_state.df, "箱线图", None, col
-#                                     )
-#                                 elif chart_type == "直方图":
-#                                     fig = managers['chart_generator'].create_chart(
-#                                         st.session_state.df, "直方图", col, bins=bins
-#                                     )
-#                             else:
-#                                 if chart_type == "条形图" or chart_type == "柱状图":
-#                                     freq_df = st.session_state.df[col].value_counts().reset_index()
-#                                     freq_df.columns = [col, "频数"]
-#                                     fig = managers['chart_generator'].create_chart(
-#                                         freq_df.head(20), "柱状图", col, "频数"
-#                                     )
-#                                 elif chart_type == "饼图":
-#                                     freq_df = st.session_state.df[col].value_counts().reset_index()
-#                                     freq_df.columns = [col, "频数"]
-#                                     fig = managers['chart_generator'].create_chart(
-#                                         freq_df.head(10), "饼图", col, "频数"
-#                                     )
-                            
-#                             if fig:
-#                                 st.session_state.preview_manager.update_chart_preview(
-#                                     fig, f"{col}-{chart_type}"
-#                                 )
-#                                 st.session_state.preview_mode = 'chart'
-#                                 st.session_state.current_page = "📈 可视化"
-#                                 st.rerun()
-#                             else:
-#                                 st.error(f"{col}的{chart_type}生成失败")
-                                
-#                     except Exception as e:
-#                         st.error(f"图表生成失败: {str(e)}")
-    
-#     # ===========================================
-#     # 第八部分：状态提示和调试信息
-#     # ===========================================
-#     st.markdown("---")
-    
-#     # 状态提示
-#     col_status1, col_status2, col_status3 = st.columns(3)
-#     with col_status1:
-#         st.caption(f"📊 已选列: {len(selected_cols)}列")
-#     with col_status2:
-#         st.caption(f"📈 统计指标: {len(numeric_stats) + len(category_stats)}个")
-#     with col_status3:
-#         st.caption(f"🎨 图表: {chart_type}")
-    
-#     # 按钮状态提示
-#     st.info(f"统计表按钮: {'✅ 可用' if has_stats else '❌ 需选择指标'} | 图表按钮: {'✅ 可用' if chart_ready else '❌ 需选择图表类型'}")
-    
-#     # 调试信息面板
-#     with st.expander("🔍 调试信息面板", expanded=False):
-#         st.json({
-#             "selected_cols": selected_cols,
-#             "selected_numeric": selected_numeric,
-#             "selected_category": selected_category,
-#             "numeric_stats": numeric_stats,
-#             "category_stats": category_stats,
-#             "chart_type": chart_type,
-#             "has_stats": has_stats,
-#             "chart_ready": chart_ready
-#         })
 
-def render_descriptive_stats_with_chart():
-    """数据概览（整合 df.info 和 df.describe）"""
-    st.markdown("#### 📊 数据概览")
+         
+          
     
-    df = st.session_state.df
-    
-    # ===========================================
-    # 第一部分：基本信息
-    # ===========================================
-    st.markdown("##### 基本信息")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("总行数", f"{len(df):,}")
-    with col2:
-        st.metric("总列数", len(df.columns))
-    with col3:
-        missing_count = df.isna().sum().sum()
-        missing_pct = (missing_count / (len(df) * len(df.columns))) * 100
-        st.metric("缺失值", f"{missing_count} ({missing_pct:.1f}%)")
-    with col4:
-        memory_usage = df.memory_usage(deep=True).sum() / 1024 / 1024
-        st.metric("内存占用", f"{memory_usage:.2f} MB")
-    
-    st.markdown("---")
-    
-    # ===========================================
-    # 第二部分：列信息
-    # ===========================================
-    st.markdown("##### 列信息")
-    
-    # 【修复】直接使用列名，不使用索引
-    col_info = []
-    for i, col in enumerate(df.columns):
-        col_info.append({
-            "列名": col,
-            "数据类型": str(df[col].dtype),
-            "非空值数": df[col].count(),
-            "缺失值数": df[col].isna().sum(),
-            "缺失率": f"{df[col].isna().sum() / len(df) * 100:.1f}%",
-            "唯一值数": df[col].nunique()
-        })
-    
-    col_info_df = pd.DataFrame(col_info)
-    # 【关键修复】重置索引并隐藏
-    col_info_df = col_info_df.reset_index(drop=True)
-    st.dataframe(col_info_df, use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    
-    # ===========================================
-    # 第三部分：数值列统计摘要
-    # ===========================================
-    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
-    if numeric_cols:
-        st.markdown("##### 数值列统计摘要")
-        
-        # 获取描述性统计
-        desc_df = df[numeric_cols].describe(percentiles=[.25, .5, .75]).round(2)
-        
-        # 【关键修复】将索引转换为列，并重置
-        desc_df = desc_df.reset_index()
-        desc_df = desc_df.rename(columns={"index": "统计指标"})
-        
-        # 重置索引
-        desc_df = desc_df.reset_index(drop=True)
-        
-        st.dataframe(desc_df, use_container_width=True, hide_index=True)
-        
-        # 高级统计指标
-        with st.expander("查看高级统计指标（方差/偏度/峰度）"):
-            advanced_stats = []
-            for col in numeric_cols:
-                advanced_stats.append({
-                    "统计指标": "方差",
-                    col: round(df[col].var(), 2)
-                })
-                advanced_stats.append({
-                    "统计指标": "偏度",
-                    col: round(df[col].skew(), 2)
-                })
-                advanced_stats.append({
-                    "统计指标": "峰度",
-                    col: round(df[col].kurtosis(), 2)
-                })
-            
-            adv_df = pd.DataFrame(advanced_stats)
-            adv_df = adv_df.reset_index(drop=True)
-            st.dataframe(adv_df, use_container_width=True, hide_index=True)
-    else:
-        st.info("没有数值类型的列")
-    
-    st.markdown("---")
-    
-    # ===========================================
-    # 第四部分：文本列统计摘要
-    # ===========================================
-    text_cols = df.select_dtypes(include=['object']).columns.tolist()
-    
-    if text_cols:
-        st.markdown("##### 文本列统计摘要")
-        
-        text_stats = []
-        for col in text_cols:
-            text_stats.append({
-                "列名": col,
-                "总记录数": len(df[col]),
-                "唯一值数": df[col].nunique(),
-                "最频繁值": df[col].mode().iloc[0] if not df[col].mode().empty else "N/A",
-                "最频繁值出现次数": df[col].value_counts().iloc[0] if len(df[col].value_counts()) > 0 else 0,
-                "缺失值": df[col].isna().sum()
-            })
-        
-        text_stats_df = pd.DataFrame(text_stats)
-        # 【关键修复】重置索引
-        text_stats_df = text_stats_df.reset_index(drop=True)
-        st.dataframe(text_stats_df, use_container_width=True, hide_index=True)
-        
-        # 显示各列的频数分布
-        with st.expander("查看各列频数分布"):
-            for col in text_cols[:3]:
-                st.markdown(f"**{col}**")
-                freq = df[col].value_counts().head(10).reset_index()
-                freq.columns = [col, "频数"]
-                # 【关键修复】重置索引
-                freq = freq.reset_index(drop=True)
-                st.dataframe(freq, use_container_width=True, hide_index=True)
-                st.markdown("---")
-            
-            if len(text_cols) > 3:
-                st.info(f"还有 {len(text_cols) - 3} 列未显示，可导出完整统计")
-    else:
-        st.info("没有文本类型的列")
-    
-    st.markdown("---")
-    
-    # ===========================================
-    # 第五部分：数据导出
-    # ===========================================
-    st.markdown("##### 导出统计结果")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📥 导出完整统计报告", key="export_full_stats", use_container_width=True):
-            with pd.ExcelWriter('data_overview.xlsx') as writer:
-                # 基本信息
-                basic_info = pd.DataFrame({
-                    "指标": ["总行数", "总列数", "缺失值总数", "内存占用(MB)"],
-                    "值": [len(df), len(df.columns), missing_count, f"{memory_usage:.2f}"]
-                })
-                basic_info.to_excel(writer, sheet_name='基本信息', index=False)
-                
-                # 列信息
-                col_info_df.to_excel(writer, sheet_name='列信息', index=False)
-                
-                # 数值统计
-                if numeric_cols:
-                    desc_df.to_excel(writer, sheet_name='数值统计', index=False)
-                
-                # 文本统计
-                if text_cols:
-                    text_stats_df.to_excel(writer, sheet_name='文本统计', index=False)
-            
-            with open('data_overview.xlsx', 'rb') as f:
-                st.download_button(
-                    label="点击下载Excel报告",
-                    data=f,
-                    file_name=f"data_overview_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_full_stats"
-                )
-def render_correlation_with_heatmap():
-    """相关性分析 + 热力图"""
-    st.markdown("#### 相关性分析")
-    
-    # 获取数值列
-    numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
-    if len(numeric_cols) < 2:
-        st.warning("需要至少2个数值列才能进行相关性分析")
-        # 显示提示
-        with st.expander("💡 如何准备数据？"):
-            st.markdown("""
-            **相关性分析要求**：
-            - 只能分析**数值列**（int64, float64类型）
-            - 文本列需要先转换为数值才能分析
-            - 可以使用 **转换** 功能将文本转为数值
-            
-            **当前数值列**：
-            """ + (", ".join(numeric_cols) if numeric_cols else "无数值列"))
-        return
-    
-    # 列选择
-    selected_cols = st.multiselect(
-        "选择要分析的数值列（至少2列）",
-        numeric_cols,
-        key="corr_cols_chart",
-        placeholder="请选择要分析的数值列"
-    )
-    
-    if len(selected_cols) < 2:
-        st.info("数据中至少包含2个数值列才能进行分析")
-        return
-    
-    # 方法选择
-    method = st.selectbox(
-        "选择分析方法",
-        ["pearson", "spearman", "kendall"],
-        key="corr_method_chart",
-        format_func=lambda x: {
-            "pearson": "皮尔逊 (Pearson) - 线性相关，适用于连续数值",
-            "spearman": "斯皮尔曼 (Spearman) - 秩相关，适用于单调关系",
-            "kendall": "肯德尔 (Kendall) - 一致性，适用于小样本"
-        }[x]
-    )
-    
-    # 图表选项
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        show_values = st.checkbox("显示相关系数", value=True, key="corr_show_values")
-    
-    with col2:
-        color_scale = st.selectbox(
-            "色阶",
-            ["RdBu_r", "Viridis", "Plasma", "Inferno", "Blues", "Reds"],
-            key="corr_colorscale"
-        )
-    
-    # 操作按钮
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📊 生成相关性矩阵", key="btn_corr_matrix", use_container_width=True):
-            with st.spinner("正在计算相关性..."):
-                try:
-                    # 计算相关性矩阵
-                    corr_df = managers['stats_analyzer'].correlation_analysis(
-                        st.session_state.df[selected_cols], method
-                    )
-                    
-                    if corr_df is not None and not corr_df.empty:
-                        # 格式化数值，保留4位小数
-                        corr_df = corr_df.round(4)
-                        
-                        # 更新预览管理器
-                        st.session_state.preview_manager.update_stats_preview(
-                            corr_df, 
-                            f"{method.upper()}相关性矩阵"
-                        )
-                        st.success("相关性矩阵已生成，请查看主内容区")
-                        st.rerun()
-                    else:
-                        st.error("相关性矩阵生成失败")
-                        
-                except Exception as e:
-                    st.error(f"计算失败: {str(e)}")
-    
-    with col2:
-        if st.button("🔥 生成热力图", key="btn_corr_heatmap", use_container_width=True):
-            with st.spinner("正在生成热力图..."):
-                try:
-                    # 计算相关性矩阵
-                    corr_df = managers['stats_analyzer'].correlation_analysis(
-                        st.session_state.df[selected_cols], method
-                    )
-                    
-                    if corr_df is not None and not corr_df.empty:
-                        # 创建热力图
-                        fig = managers['chart_generator'].create_chart(
-                            corr_df, 
-                            "热力图",
-                            colorscale=color_scale,
-                            show_values=show_values
-                        )
-                        
-                        if fig:
-                            st.session_state.preview_manager.update_chart_preview(
-                                fig, 
-                                f"{method.upper()}相关性热力图"
-                            )
-                            st.success("热力图已生成，请查看主内容区")
-                            st.rerun()
-                        else:
-                            st.error("热力图生成失败")
-                    else:
-                        st.error("相关性矩阵计算失败")
-                        
-                except Exception as e:
-                    st.error(f"生成失败: {str(e)}")
-    
-    # 显示已选择列的信息
-    if len(selected_cols) >= 2:
-        st.caption(f"已选择 {len(selected_cols)} 列: {', '.join(selected_cols[:5])}{'...' if len(selected_cols) > 5 else ''}")
-            
-def render_group_stats_with_chart():
-    """分组统计 + 聚合图表"""
-    st.markdown("#### 分组统计")
-    
-    # 获取列信息
-    category_cols = st.session_state.df.select_dtypes(include=['object']).columns.tolist()
-    numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
-    if not category_cols:
-        st.warning("没有分类列可用于分组")
-        return
-    
-    if not numeric_cols:
-        st.warning("没有数值列可用于聚合")
-        return
-    
-    # 左右两列布局
-    col_left, col_right = st.columns([1, 1])
-    
-    with col_left:
-        st.markdown("##### 分组设置")
-        
-        group_cols = st.multiselect(
-            "选择分组字段（支持多级分组）",
-            category_cols,
-            key="group_cols_chart",
-            placeholder="请选择分组字段（可按顺序选择多个）"
-        )
-        
-        value_cols = st.multiselect(
-            "选择数值字段",
-            numeric_cols,
-            key="group_values_chart",
-            placeholder="请选择数值字段"
-        )
-        
-        agg_options = ["请选择聚合函数", "mean", "sum", "count", "min", "max"]
-        agg_func = st.selectbox(
-            "选择聚合函数",
-            agg_options,
-            key="group_agg_chart",
-            format_func=lambda x: {
-                "请选择聚合函数": "请选择聚合函数",
-                "mean": "平均值", 
-                "sum": "求和", 
-                "count": "计数",
-                "min": "最小值", 
-                "max": "最大值"
-            }.get(x, x),
-            index=0
-        )
-    
-    with col_right:
-        if group_cols and value_cols and agg_func != "请选择聚合函数":
-            st.markdown("##### 图表设置")
-            
-            chart_type = st.selectbox(
-                "选择图表类型",
-                ["分组柱状图"],
-                key="group_chart_type",
-                index=0,
-                disabled=True  # 目前只支持分组柱状图，后续可扩展
-            )
-            
-            col_a, col_b = st.columns(2)
-            with col_a:
-                sort_by = st.checkbox("排序显示", value=True, key="group_sort")
-            with col_b:
-                show_values = st.checkbox("显示数值标签", value=True, key="group_show_values")
-    
-    # 按钮区域
-    if group_cols and value_cols and agg_func != "请选择聚合函数":
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
-        
-        with col_btn1:
-            if st.button("📊 执行分组统计", key="btn_group_calc", use_container_width=True):
-                with st.spinner("正在计算分组统计..."):
-                    try:
-                        from components.group_stats_chart import GroupStatsChart
-                        
-                        chart = GroupStatsChart(
-                            st.session_state.df,
-                            group_cols,
-                            value_cols,
-                            agg_func
-                        )
-                        
-                        # 获取统计表
-                        result_df = chart.agg_df
-                        result_df = result_df.round(2)
-                        
-                        st.session_state.preview_manager.update_stats_preview(
-                            result_df,
-                            f"分组统计: {' → '.join(group_cols)}"
-                        )
-                        st.success("分组统计已生成，请查看主内容区")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"生成失败: {str(e)}")
-        
-        with col_btn2:
-            if st.button("📈 生成分组图表", key="btn_group_chart", use_container_width=True):
-                with st.spinner("正在生成图表..."):
-                    try:
-                        from components.group_stats_chart import GroupStatsChart
-                        
-                        chart = GroupStatsChart(
-                            st.session_state.df,
-                            group_cols,
-                            value_cols,
-                            agg_func
-                        )
-                        
-                        fig = chart.render(show_values=show_values, sort_by=sort_by)
-                        
-                        if fig:
-                            st.session_state.preview_manager.update_chart_preview(
-                                fig,
-                                f"{value_cols[0]} 按 {' → '.join(group_cols)} 分组"
-                            )
-                            st.session_state.preview_mode = 'chart'
-                        else:
-                            st.error("图表生成失败")
-                    except Exception as e:
-                        st.error(f"生成失败: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-        
-        with col_btn3:
-            st.caption(f"已选择: {len(group_cols)}个分组, {len(value_cols)}个数值")
-            if len(group_cols) > 1:
-                st.caption(f"分组层级: {' → '.join(group_cols)}")
-    else:
-        st.info("请依次选择：分组字段 → 数值字段 → 聚合函数")
-            
-def render_time_series_with_chart():
-    """时间序列分析 + 趋势图"""
-    st.markdown("#### 时间序列分析")
-    
-    # 检测日期列
-    date_cols = []
-    for col in st.session_state.df.columns:
-        if pd.api.types.is_datetime64_any_dtype(st.session_state.df[col]):
-            date_cols.append(col)
-    
-    if not date_cols:
-        st.warning("没有日期类型的列，请先转换日期格式")
-        return
-    
-    numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
-    if not numeric_cols:
-        st.warning("没有数值列可用于分析")
-        return
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        date_col = st.selectbox("日期列", date_cols, key="ts_date_chart")
-        value_col = st.selectbox("数值列", numeric_cols, key="ts_value_chart")
-        
-        freq = st.selectbox(
-            "重采样频率",
-            ["D", "W", "M", "Q", "Y"],
-            key="ts_freq_chart",
-            format_func=lambda x: {"D": "日", "W": "周", "M": "月", "Q": "季", "Y": "年"}[x]
-        )
-    
-    with col2:
-        st.markdown("##### 分析选项")
-        show_ma = st.checkbox("移动平均线", value=True, key="ts_ma")
-        if show_ma:
-            ma_window = st.slider("移动平均窗口", 3, 30, 7, key="ts_ma_window")
-        
-        show_trend = st.checkbox("趋势线", value=False, key="ts_trend")
-        show_seasonal = st.checkbox("季节性分解", value=False, key="ts_seasonal")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("📊 时间序列表", key="btn_ts_table", use_container_width=True):
-            with st.spinner("正在分析..."):
-                ts_df = managers['stats_analyzer'].time_series_analysis(
-                    st.session_state.df, date_col, value_col, freq
-                )
-                if ts_df is not None:
-                    st.session_state.preview_manager.update_stats_preview(
-                        ts_df.head(100),
-                        f"{value_col}时间序列 ({freq})"
-                    )
-                    st.success("时间序列表已生成")
-                    st.rerun()
-    
-    with col2:
-        if st.button("📈 生成趋势图", key="btn_ts_chart", use_container_width=True):
-            with st.spinner("正在生成图表..."):
-                # 准备时间序列数据
-                ts_data = st.session_state.df[[date_col, value_col]].copy()
-                ts_data[date_col] = pd.to_datetime(ts_data[date_col])
-                ts_data = ts_data.set_index(date_col).resample(freq).mean().reset_index()
-                
-                fig = managers['chart_generator'].create_chart(
-                    ts_data, "折线图", date_col, value_col
-                )
-                
-                if fig and show_ma:
-                    # 计算移动平均
-                    ts_data['MA'] = ts_data[value_col].rolling(window=ma_window).mean()
-                    fig.add_scatter(x=ts_data[date_col], y=ts_data['MA'], 
-                                   mode='lines', name=f'MA{ma_window}')
-                
-                st.session_state.preview_manager.update_chart_preview(
-                    fig, f"{value_col}趋势图"
-                )
-                st.success("趋势图已生成")
-                st.rerun()
-    
-    with col3:
-        st.caption(f"频率: {freq}")
-        
-def render_pivot_with_chart():
-    """数据透视表 + 透视图"""
-    st.markdown("#### 数据透视表")
-    
-    all_cols = st.session_state.df.columns.tolist()
-    numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        index_cols = st.multiselect(
-            "选择行字段",
-            all_cols,
-            key="pivot_index_chart",
-            placeholder="请选择行字段"
-        )
-        
-        columns_cols = st.multiselect(
-            "选择列字段（可选）",
-            all_cols,
-            key="pivot_columns_chart",
-            placeholder="请选择列字段"
-        )
-        
-        values_cols = st.multiselect(
-            "选择值字段",
-            numeric_cols,
-            key="pivot_values_chart",
-            placeholder="请选择值字段"
-        )
-        
-        # 聚合函数 - 添加"请选择"选项，没有默认值
-        agg_options = ["请选择聚合函数", "mean", "sum", "count", "min", "max", "std"]
-        agg_func = st.selectbox(
-            "选择聚合函数",
-            agg_options,
-            key="pivot_agg_chart",
-            format_func=lambda x: {
-                "请选择聚合函数": "请选择聚合函数",
-                "mean": "平均值",
-                "sum": "求和",
-                "count": "计数",
-                "min": "最小值",
-                "max": "最大值",
-                "std": "标准差"
-            }.get(x, x),
-            index=0  # 索引0是"请选择聚合函数"
-        )
-    
-    with col2:
-        if index_cols and values_cols and agg_func != "请选择聚合函数":
-            st.markdown("##### 图表设置")
-            chart_options = ["请选择图表类型", "柱状图", "热力图", "饼图", "堆积柱状图"]
-            chart_type = st.selectbox(
-                "选择图表类型",
-                chart_options,
-                key="pivot_chart_type",
-                index=0
-            )
-            
-            if chart_type != "请选择图表类型":
-                if chart_type == "热力图":
-                    show_values = st.checkbox("显示数值", value=True, key="pivot_show_values")
-                
-                stack = st.checkbox("堆积显示", value=False, key="pivot_stack") if chart_type == "柱状图" else False
-    
-    if index_cols and values_cols and agg_func != "请选择聚合函数":
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("📊 生成透视表", key="btn_pivot_table", use_container_width=True):
-                with st.spinner("正在生成透视表..."):
-                    try:
-                        pivot_df = pd.pivot_table(
-                            st.session_state.df,
-                            index=index_cols[0] if len(index_cols) == 1 else index_cols,
-                            columns=columns_cols[0] if columns_cols else None,
-                            values=values_cols[0] if len(values_cols) == 1 else values_cols,
-                            aggfunc=agg_func,
-                            fill_value=0
-                        )
-                        
-                        st.session_state.preview_manager.update_stats_preview(
-                            pivot_df,
-                            "数据透视表"
-                        )
-                        st.success("透视表已生成，请查看主内容区")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"生成失败: {str(e)}")
-        
-        with col2:
-            if chart_type != "请选择图表类型" and st.button("📈 生成透视图", key="btn_pivot_chart", use_container_width=True):
-                with st.spinner("正在生成图表..."):
-                    try:
-                        # 准备数据
-                        pivot_data = pd.pivot_table(
-                            st.session_state.df,
-                            index=index_cols[0],
-                            columns=columns_cols[0] if columns_cols else None,
-                            values=values_cols[0],
-                            aggfunc=agg_func,
-                            fill_value=0
-                        ).reset_index()
-                        
-                        # 调试信息
-                        st.write(f"透视数据列: {pivot_data.columns.tolist()}")
-                        
-                        if chart_type == "热力图":
-                            fig = managers['chart_generator'].create_chart(
-                                pivot_data, 
-                                "热力图",
-                                show_values=show_values
-                            )
-                        elif chart_type == "饼图":
-                            fig = managers['chart_generator'].create_chart(
-                                pivot_data, 
-                                "饼图",
-                                index_cols[0],
-                                values_cols[0]
-                            )
-                        else:  # 柱状图或堆积柱状图
-                            fig = managers['chart_generator'].create_chart(
-                                pivot_data, 
-                                "柱状图",
-                                index_cols[0],
-                                values_cols[0]
-                            )
-                        
-                        if fig:
-                            st.session_state.preview_manager.update_chart_preview(
-                                fig,
-                                f"透视图-{chart_type}"
-                            )
-                            st.success("透视图已生成")
-                            st.rerun()
-                        else:
-                            st.error("图表生成失败")
-                    except Exception as e:
-                        st.error(f"生成失败: {str(e)}")
-                        st.exception(e)
-        
-        with col3:
-            st.caption(f"聚合: {agg_func}")
-    else:
-        st.info("请依次选择：行字段 → 值字段 → 聚合函数")
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2307,48 +602,7 @@ def render_main_content():
 
 def render_welcome_page():
     """欢迎页面（无数据时显示）"""
-    
-    # 添加一个可点击的提示，点击后展开侧边栏
-    st.markdown("""
-    <div style="
-        text-align: center;
-        padding: 3rem;
-        background: linear-gradient(135deg, #6A4E9B20, #4A6A8B20);
-        border-radius: 16px;
-        margin: 2rem 0;
-        border: 1px dashed #6A4E9B;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    " id="upload-hint">
-        <h2>📊 数据洞察助手</h2>
-        <p style="color: #9AA7C0; font-size: 1.1rem;">
-            👈 点击此处，在左侧边栏上传数据文件开始分析
-        </p>
-        <p style="font-size: 0.9rem;">支持 CSV、Excel、JSON 格式</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 添加 JavaScript 实现点击展开侧边栏并聚焦到上传组件
-    st.markdown("""
-    <script>
-        document.getElementById('upload-hint').addEventListener('click', function() {
-            // 查找侧边栏折叠按钮并点击展开
-            const collapseBtn = document.querySelector('[data-testid="stSidebarCollapsedControl"]');
-            if (collapseBtn) {
-                collapseBtn.click();
-                // 延迟后滚动到上传组件
-                setTimeout(function() {
-                    const uploader = document.querySelector('[data-testid="stFileUploader"]');
-                    if (uploader) {
-                        uploader.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        uploader.focus();
-                    }
-                }, 300);
-            }
-        });
-    </script>
-    """, unsafe_allow_html=True)
-    
+
     # 功能介绍（可折叠）
     with st.expander("✨ 功能介绍", expanded=True):
         col1, col2 = st.columns(2)
@@ -2724,7 +978,7 @@ def render_quick_chart_options():
             cat_col = st.selectbox("分类列", category_cols, key="quick_pie_cat")
             val_col = st.selectbox("数值列", numeric_cols, key="quick_pie_val")
             if st.button("生成", key="quick_gen_pie"):
-                fig = managers['chart_generator'].create_chart(
+                fig = ChartGenerator.create_chart(
                     st.session_state.df, "饼图", cat_col, val_col
                 )
                 if fig:
@@ -2734,7 +988,7 @@ def render_quick_chart_options():
         x_col = st.selectbox("X轴", numeric_cols, key="quick_chart_x")
         y_col = st.selectbox("Y轴", numeric_cols, key="quick_chart_y", index=min(1, len(numeric_cols)-1)) if len(numeric_cols) > 1 else None
         if st.button("生成", key="quick_gen_chart"):
-            fig = managers['chart_generator'].create_chart(
+            fig = ChartGenerator.create_chart(
                 st.session_state.df, chart_type, x_col, y_col
             )
             if fig:
@@ -2750,7 +1004,7 @@ def render_ai_analysis_page():
         return
     
     if st.session_state.df is None:
-        st.warning("请先上传数据")
+        st.warning("请先在左侧栏进行数据上传")
         return
     
     # 显示AI分析结果（如果有）
@@ -2772,13 +1026,13 @@ def render_settings_page():
     st.markdown("### 主题设置")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🌙 深色模式", use_container_width=True):
-            if st.session_state.theme_mode != 'dark':
+        if st.button("☀️ 浅色模式", use_container_width=True):
+            if st.session_state.theme_mode != 'light':
                 ThemeManager.toggle_theme()
                 st.rerun()
     with col2:
-        if st.button("☀️ 浅色模式", use_container_width=True):
-            if st.session_state.theme_mode != 'light':
+        if st.button("🌙 深色模式", use_container_width=True):
+            if st.session_state.theme_mode != 'dark':
                 ThemeManager.toggle_theme()
                 st.rerun()
     
@@ -2822,31 +1076,40 @@ def render_settings_page():
 # ============================================
 def main():
     """主程序入口"""
-    print("="*50)
-    print("【调试】程序启动/刷新")
-    print(f"【调试】当前时间: {datetime.now().strftime('%H:%M:%S')}")
-    print(f"【调试】当前页面: {st.session_state.get('current_page', '未设置')}")
-    print(f"【调试】预览模式: {st.session_state.get('preview_mode', '未设置')}")
+    # 顶部区域
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        st.markdown("## 📊 数据洞察助手")
+    with col2:
+        if st.button("🌙 深色模式" if st.session_state.theme_mode == 'light' else "☀️ 浅色模式", key="top_theme"):
+            ThemeManager.toggle_theme()
+            st.rerun()
+    with col3:
+        pass
     
-    # 显示顶部公告
-    managers['announcement'].show_announcements()
+    st.markdown("---")
     
-    # 渲染侧边栏
-    render_sidebar()
+    # 文件上传区域（紧凑）
+    with st.container():
+        render_file_uploader()
     
-    # 渲染右侧功能面板
-    render_right_panel()
+    st.markdown("---")
     
-    # 渲染主内容区
+    # 功能标签页
+    tab1, tab2, tab3 = st.tabs(["🧹 数据处理", "📊 分析选项", "🤖 AI配置"])
+    
+    with tab1:
+        render_data_processing_tab()
+    with tab2:
+        render_analysis_options_tab()
+    with tab3:
+        render_ai_config_tab()
+    
+    # 主内容区
     render_main_content()
-    st.divider()
-    st.caption(f"当前页面: {st.session_state.get('current_page', '未知')}")
     
-    # 显示底部信息
+    # 底部
     managers['footer'].show_footer()
-    
-    print("【调试】主程序执行完毕")
-    print("="*50)
 
 # ============================================
 # 程序启动
