@@ -202,7 +202,7 @@ def render_descriptive_stats_with_chart():
                 )
     
     with col2:
-        if st.button("📥 导出为CSV", key="export_stats_csv", use_container_width=True):
+        if st.button("📥 导出为CSV", key="export_stats_csv_desc", use_container_width=True):
             all_stats = []
             for col in numeric_cols:
                 row = {"列名": col, "类型": "数值"}
@@ -737,56 +737,52 @@ def render_composite_pie_chart():
     
     df = st.session_state.df
     
-    category_cols = df.select_dtypes(include=['object']).columns.tolist()
-    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    # 获取所有列
+    all_cols = df.columns.tolist()
     
-    if not category_cols:
-        st.warning("需要分类列才能生成复合饼图")
-        return
+    # 获取数值列
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     
     if not numeric_cols:
         st.warning("需要数值列才能生成复合饼图")
         return
     
-    col1, col2 = st.columns(2)
+    # 分类列多选（按顺序作为层级）
+    st.markdown("##### 层级设置")
+    st.caption("按选择顺序作为下钻层级（第一级 → 第二级 → ...）")
     
-    with col1:
-        category_col = st.selectbox(
-            "选择分类列（主类别）",
-            category_cols,
-            key="composite_cat_col"
-        )
-    
-    with col2:
-        value_col = st.selectbox(
-            "选择数值列",
-            numeric_cols,
-            key="composite_val_col"
-        )
-    
-    st.markdown("##### 选择模式")
-    pie_mode = st.radio(
-        "复合饼图模式",
-        ["子图布局", "交互下钻", "复合定位", "南丁格尔玫瑰图"],
-        key="composite_pie_mode",
-        horizontal=True,
-        help="""
-        - 子图布局：网格展示主图和子图
-        - 交互下钻：点击主图区块查看详情
-        - 复合定位：预设模板布局
-        - 南丁格尔玫瑰图：极坐标柱状图，半径表示数值大小
-        """
+    level_cols = st.multiselect(
+        "选择分类列（按顺序选择）",
+        all_cols,
+        key="composite_levels",
+        placeholder="请至少选择一个分类列"
     )
     
-    # 模式说明
-    if pie_mode == "子图布局":
-        st.info("📊 子图布局模式：主图在左上角，其他子图按网格排列，适合对比分析多个类别")
-    elif pie_mode == "交互下钻":
-        st.info("🖱️ 交互下钻模式：点击主图区块，下方显示该区块的详细构成，适合层级探索")
-    elif pie_mode == "复合定位":
-        st.info("🎯 复合定位模式：主图居中，子图按预设位置环绕，适合报告展示")
-    else:
-        st.info("🌸 南丁格尔玫瑰图：极坐标柱状图，半径表示数值大小，适合周期性数据展示")
+    # 数值列选择
+    value_col = st.selectbox(
+        "数值列",
+        numeric_cols,
+        key="composite_value"
+    )
+    
+    if not level_cols:
+        st.info("请至少选择一个分类列")
+        return
+    
+    # 显示层级预览
+    with st.expander("📊 下钻层级预览"):
+        st.write("下钻顺序：")
+        for i, col in enumerate(level_cols):
+            st.write(f"  {i+1}. {col}")
+        st.write(f"数值列：{value_col}")
+    
+    # 模式选择
+    pie_mode = st.radio(
+        "复合饼图模式",
+        ["交互下钻", "子图布局", "复合定位", "南丁格尔玫瑰图"],
+        key="composite_pie_mode",
+        horizontal=True
+    )
     
     # 高级选项
     with st.expander("高级选项"):
@@ -798,6 +794,7 @@ def render_composite_pie_chart():
             key="composite_max_cat"
         )
         show_title = st.checkbox("显示图表标题", value=True, key="composite_title")
+        format_numbers = st.checkbox("格式化数值（万/亿）", value=True, key="composite_format")
     
     # 生成图表按钮
     if st.button("🎨 生成复合饼图", key="btn_composite_pie", use_container_width=True, type="primary"):
@@ -805,14 +802,20 @@ def render_composite_pie_chart():
             try:
                 from utils.chart_generator import ChartGenerator
                 
+                # 调试：打印传递的参数
+                print(f"【调试】level_cols: {level_cols}")
+                print(f"【调试】value_col: {value_col}")
+                print(f"【调试】pie_mode: {pie_mode}")
+                
                 fig = ChartGenerator.create_chart(
                     df=st.session_state.df,
                     chart_type="复合饼图",
-                    x_col=category_col,
-                    y_col=value_col,
+                    level_cols=level_cols,      # 多级分类列
+                    value_col=value_col,
                     pie_mode=pie_mode,
                     max_categories=max_categories,
-                    title=f"{category_col}分布" if show_title else None
+                    format_numbers=format_numbers,
+                    title=f"{value_col} 按 {' → '.join(level_cols)} 分布" if show_title else None
                 )
                 
                 if fig:
@@ -826,15 +829,11 @@ def render_composite_pie_chart():
                     st.error("图表生成失败，请检查数据")
             except Exception as e:
                 st.error(f"生成失败: {str(e)}")
+                import traceback
+                traceback.print_exc()
     
     # 数据预览
     with st.expander("查看数据分布"):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("##### 类别分布")
-            category_counts = df[category_col].value_counts().head(max_categories)
-            st.dataframe(category_counts.reset_index(), use_container_width=True)
-        with col2:
-            st.markdown("##### 数值汇总")
-            category_sums = df.groupby(category_col)[value_col].sum().sort_values(ascending=False).head(max_categories)
-            st.dataframe(category_sums.reset_index(), use_container_width=True)
+        st.write("**层级数据预览**")
+        preview_data = df.groupby(level_cols)[value_col].sum().reset_index()
+        st.dataframe(preview_data.head(20), use_container_width=True)

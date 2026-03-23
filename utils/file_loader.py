@@ -54,13 +54,72 @@ class FileLoader:
     
     @staticmethod
     def _load_excel(file):
-        """加载Excel文件（单工作表直接加载）"""
+        """加载Excel文件（支持多工作表选择）"""
         try:
             import pandas as pd
-            # 注意：多工作表已在 render_file_uploader 中处理
-            # 这里只处理单工作表的情况
-            df = pd.read_excel(file, sheet_name=0)
+            import streamlit as st
+            import io
+            
+            # 读取文件内容到内存
+            file_content = file.read()
+            
+            # 获取工作表名称
+            xl = pd.ExcelFile(io.BytesIO(file_content))
+            sheet_names = xl.sheet_names
+            
+            # 只有一个工作表，直接加载
+            if len(sheet_names) == 1:
+                df = pd.read_excel(io.BytesIO(file_content), sheet_name=sheet_names[0])
+                print(f"【调试】加载单个工作表: {sheet_names[0]}，行数: {len(df)}, 列数: {len(df.columns)}")
+                return df
+            
+            # 多个工作表，显示选择器
+            st.info(f"📑 检测到 {len(sheet_names)} 个工作表")
+            
+            # 使用文件内容哈希作为唯一标识
+            file_hash = hash(file_content)
+            state_key = f"excel_state_{file_hash}"
+            
+            # 初始化状态
+            if state_key not in st.session_state:
+                st.session_state[state_key] = {
+                    'selected_sheet': sheet_names[0],
+                    'confirmed': False,
+                    'content': file_content,
+                    'sheet_names': sheet_names
+                }
+            
+            state = st.session_state[state_key]
+            
+            # 工作表选择下拉框
+            selected_sheet = st.selectbox(
+                "请选择要加载的工作表",
+                state['sheet_names'],
+                key=f"excel_sheet_{file_hash}",
+                index=state['sheet_names'].index(state['selected_sheet'])
+            )
+            state['selected_sheet'] = selected_sheet
+            
+            # 确认按钮
+            if st.button("✅ 确认加载", key=f"excel_confirm_{file_hash}", use_container_width=True):
+                state['confirmed'] = True
+                st.rerun()
+                return None
+            
+            # 未确认时等待
+            if not state['confirmed']:
+                st.info("请选择工作表后点击「确认加载」按钮")
+                return None
+            
+            # 确认后从保存的内容加载数据
+            df = pd.read_excel(io.BytesIO(state['content']), sheet_name=state['selected_sheet'])
+            print(f"【调试】已加载工作表: {state['selected_sheet']}，行数: {len(df)}, 列数: {len(df.columns)}")
+            
+            # 加载完成后清理状态
+            del st.session_state[state_key]
+            
             return df
+            
         except Exception as e:
             st.error(f"Excel读取失败: {str(e)}")
             return None

@@ -184,7 +184,7 @@ def render_theme_toggle():
             st.rerun()
 
 def render_file_uploader():
-    """文件上传组件（紧凑美观版）"""
+    """文件上传组件"""
     
     uploaded_file = st.file_uploader(
         "点击或拖拽文件到此处",
@@ -210,56 +210,10 @@ def render_file_uploader():
     # 新文件，清空旧数据
     st.session_state.df = None
     st.session_state.original_df = None
-    
-    # 清除 Excel 相关状态
-    if 'sheet_selected' in st.session_state:
-        del st.session_state.sheet_selected
-    if 'sheet_loaded' in st.session_state:
-        del st.session_state.sheet_loaded
-    
-    # 清除预览状态
     st.session_state.preview_manager.clear_preview()
     
-    file_extension = uploaded_file.name.split('.')[-1].lower()
-    
-    # 处理 Excel 多工作表
-    if file_extension in ['xlsx', 'xls']:
-        import pandas as pd
-        
-        xl = pd.ExcelFile(uploaded_file)
-        sheet_names = xl.sheet_names
-        
-        if len(sheet_names) > 1:
-            st.info(f"📑 检测到 {len(sheet_names)} 个工作表")
-            
-            if 'sheet_selected' not in st.session_state:
-                st.session_state.sheet_selected = sheet_names[0]
-            if 'sheet_loaded' not in st.session_state:
-                st.session_state.sheet_loaded = False
-            
-            selected_sheet = st.selectbox(
-                "选择工作表",
-                sheet_names,
-                key="excel_sheet_selector",
-                index=sheet_names.index(st.session_state.sheet_selected),
-                label_visibility="collapsed"
-            )
-            st.session_state.sheet_selected = selected_sheet
-            
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("✅ 确认", key="confirm_sheet_load", use_container_width=True, type="primary"):
-                    st.session_state.sheet_loaded = True
-                    st.rerun()
-            
-            if not st.session_state.sheet_loaded:
-                st.caption("请选择工作表后点击确认")
-                return
-            else:
-                df = pd.read_excel(uploaded_file, sheet_name=st.session_state.sheet_selected)
-        else:
-            df = pd.read_excel(uploaded_file, sheet_name=sheet_names[0])
-    else:
+    # 统一调用 file_loader 处理所有格式
+    with st.spinner("正在加载数据..."):
         df = managers['file_loader'].load_file(uploaded_file)
     
     if df is not None:
@@ -268,19 +222,17 @@ def render_file_uploader():
         st.session_state.original_df = df.copy()
         st.session_state.last_uploaded_file_key = current_file_key
         managers['history'].add_to_history("上传文件", df)
-        
-        # 清除工作表选择状态
-        if 'sheet_selected' in st.session_state:
-            del st.session_state.sheet_selected
-        if 'sheet_loaded' in st.session_state:
-            del st.session_state.sheet_loaded
-        
         st.success(f"✅ 加载成功！{len(df)}行 × {len(df.columns)}列")
         st.session_state.preview_manager.record_operation("上传文件")
         st.rerun()
     else:
-        st.error("文件加载失败，请检查文件格式")
-
+        # 不立即报错，因为可能是多工作表等待确认
+        # 检查是否在多工作表选择状态
+        if any(key.startswith('excel_state_') for key in st.session_state.keys()):
+            # 正在等待用户选择工作表，不显示错误
+            pass
+        else:
+            st.error("文件加载失败，请检查文件格式")
 # ============================================
 # 右侧功能面板
 # ============================================
@@ -654,18 +606,14 @@ def render_data_preview_page():
         return
     
     # 添加刷新按钮
-    col1, col2, col3 = st.columns([1, 1, 6])
+    col1, col2 = st.columns([1, 5])
     with col1:
         if st.button("🔄 刷新", key="refresh_preview", use_container_width=True):
             st.rerun()
     with col2:
-        if st.button("📊 数据信息", key="show_info", use_container_width=True):
-            with st.expander("数据信息", expanded=True):
-                render_data_info()
-    with col3:
         st.write("")
     
-    # 显示数据基本信息
+    # 数据基本信息（Metric 卡片）
     render_data_info()
     
     # 预览行数设置
@@ -686,11 +634,10 @@ def render_data_preview_page():
     
     # 显示数据预览
     st.markdown("### 当前数据预览")
-    
     preview_df = st.session_state.df.head(preview_rows)
     st.dataframe(preview_df, use_container_width=True, hide_index=True)
     
-    # 显示列信息
+    # 显示列信息（可折叠）
     with st.expander("查看列信息", expanded=False):
         render_column_info()
     

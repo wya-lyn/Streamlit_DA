@@ -18,18 +18,32 @@ def render_data_processing_tab():
     
     # ===== 全局操作栏 =====
     st.markdown("### ⚡ 全局操作")
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
+    
     with col1:
         if st.button("↩️ 撤销", key="global_undo", use_container_width=True):
             undo_last_operation()
+    
     with col2:
         if st.button("↪️ 重做", key="global_redo", use_container_width=True):
             redo_last_operation()
+    
     with col3:
         if st.button("📋 历史", key="global_history", use_container_width=True):
             show_global_history()
     
-    st.divider()
+    with col4:
+        if st.button("🔄 重置", key="global_reset", use_container_width=True):
+            if st.session_state.original_df is not None:
+                # 直接重置，不添加确认复选框（或改用弹窗）
+                st.session_state.preview_manager.record_operation("重置到原始数据")
+                st.session_state.df = st.session_state.original_df.copy()
+                st.success("已重置到初始状态")
+                st.rerun()
+            else:
+                st.warning("没有原始数据可重置")
+        
+        st.divider()
     
     # ===== 数据清洗（8个标签页）=====
     st.markdown("### 🧹 数据清洗")
@@ -292,6 +306,7 @@ def render_rename_columns_section():
     
     current_columns = st.session_state.df.columns.tolist()
     
+    # 显示当前列名
     st.markdown("**当前列名**")
     col_df = pd.DataFrame({
         '序号': range(1, len(current_columns) + 1),
@@ -301,17 +316,21 @@ def render_rename_columns_section():
     
     st.markdown("---")
     
+    # 修改方式选择
     rename_mode = st.radio(
         "选择修改方式",
-        ["单个修改", "批量添加前缀/后缀", "批量替换文本", "批量修改（编辑表格）"],
+        ["单个修改", "批量添加前缀/后缀", "批量替换文本", "批量修改（编辑表格）", "提升为标题"],
         key="rename_mode",
         horizontal=True
     )
     
+    # ========== 方式一：单个修改 ==========
     if rename_mode == "单个修改":
         col1, col2 = st.columns(2)
+        
         with col1:
             old_name = st.selectbox("选择要修改的列", current_columns, key="rename_single_old")
+        
         with col2:
             new_name = st.text_input("新列名", value=old_name, key="rename_single_new")
         
@@ -327,6 +346,7 @@ def render_rename_columns_section():
             else:
                 st.warning("请输入新列名")
     
+    # ========== 方式二：批量添加前缀/后缀 ==========
     elif rename_mode == "批量添加前缀/后缀":
         col1, col2 = st.columns(2)
         with col1:
@@ -362,6 +382,7 @@ def render_rename_columns_section():
                 st.success("批量添加完成")
                 st.rerun()
     
+    # ========== 方式三：批量替换文本 ==========
     elif rename_mode == "批量替换文本":
         col1, col2 = st.columns(2)
         with col1:
@@ -386,7 +407,8 @@ def render_rename_columns_section():
                 st.success("批量替换完成")
                 st.rerun()
     
-    else:  # 批量修改（编辑表格）
+    # ========== 方式四：批量修改（编辑表格） ==========
+    elif rename_mode == "批量修改（编辑表格）":
         st.markdown("**编辑表格修改列名**")
         st.caption("双击单元格直接编辑，支持批量修改")
         
@@ -427,6 +449,101 @@ def render_rename_columns_section():
                 st.session_state.preview_manager.record_operation("批量修改表头")
                 st.success(f"已修改 {len(changes)} 个列名")
                 st.rerun()
+    
+    # ========== 方式五：提升为标题 ==========
+    elif rename_mode == "提升为标题":
+        st.markdown("**提升为标题**")
+        st.caption("将指定行设置为列名，并删除该行之前的所有行")
+        
+        df = st.session_state.df
+        total_rows = len(df)
+        
+        # 行号输入
+        row_number = st.number_input(
+            "请指定第几行作为标题行（从1开始计数）",
+            min_value=1,
+            max_value=total_rows,
+            value=min(3, total_rows),
+            step=1,
+            key="promote_row_number"
+        )
+        
+        # 预览
+        with st.expander("预览数据"):
+            st.write(f"**第 {row_number} 行数据（将成为新列名）:**")
+            header_row = df.iloc[row_number - 1].tolist()
+            st.write(header_row)
+            st.write(f"**前5行数据预览:**")
+            st.dataframe(df.head(5), use_container_width=True)
+        
+        # 执行按钮
+        if st.button("✅ 确认提升", key="btn_promote_header", use_container_width=True, type="primary"):
+            try:
+                # 获取新列名候选
+                new_columns_raw = df.iloc[row_number - 1].tolist()
+                
+                # ========== 验证和清理列名 ==========
+                cleaned_columns = []
+                col_counter = 1
+                
+                for i, col in enumerate(new_columns_raw):
+                    # 1. 转换为字符串
+                    col_str = str(col) if col is not None else ""
+                    
+                    # 2. 处理空值
+                    if col_str == "" or col_str == "nan" or col_str == "None":
+                        col_str = f"列_{col_counter}"
+                        col_counter += 1
+                    
+                    # 3. 处理全数字
+                    if col_str.isdigit():
+                        col_str = f"列_{col_str}"
+                    
+                    # 4. 处理非法字符（只允许中文、字母、数字、下划线）
+                    import re
+                    col_str = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9_]', '_', col_str)
+                    
+                    # 5. 去除首尾下划线
+                    col_str = col_str.strip('_')
+                    
+                    # 6. 如果处理后为空，填充默认值
+                    if col_str == "":
+                        col_str = f"列_{col_counter}"
+                        col_counter += 1
+                    
+                    cleaned_columns.append(col_str)
+                
+                # 7. 处理重复列名
+                final_columns = []
+                seen = {}
+                for col in cleaned_columns:
+                    if col not in seen:
+                        seen[col] = 1
+                        final_columns.append(col)
+                    else:
+                        seen[col] += 1
+                        final_columns.append(f"{col}_{seen[col]}")
+                
+                # 验证最终列名数量
+                if len(final_columns) != len(new_columns_raw):
+                    st.warning(f"列名数量不一致，原列数={len(new_columns_raw)}，处理后={len(final_columns)}")
+                    return
+                
+                # 执行数据转换
+                # 删除前 row_number 行（0 到 row_number-1）
+                new_df = df.iloc[row_number:].reset_index(drop=True)
+                new_df.columns = final_columns
+                
+                # 更新数据
+                st.session_state.df = new_df
+                st.session_state.original_df = new_df.copy()
+                st.session_state.preview_manager.record_operation(f"提升第{row_number}行为标题")
+                
+                st.success(f"✅ 已将第 {row_number} 行提升为标题，删除前 {row_number - 1} 行")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"操作失败: {str(e)}")
 
 
 def render_delete_columns_section():
