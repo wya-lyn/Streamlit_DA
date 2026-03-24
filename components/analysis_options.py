@@ -796,44 +796,26 @@ def render_composite_pie_chart():
         show_title = st.checkbox("显示图表标题", value=True, key="composite_title")
         format_numbers = st.checkbox("格式化数值（万/亿）", value=True, key="composite_format")
     
-    # 生成图表按钮
-    if st.button("🎨 生成复合饼图", key="btn_composite_pie", use_container_width=True, type="primary"):
-        with st.spinner(f"正在生成{pie_mode}复合饼图..."):
-            try:
-                from utils.chart_generator import ChartGenerator
-                
-                # 调试：打印传递的参数
-                print(f"【调试】level_cols: {level_cols}")
-                print(f"【调试】value_col: {value_col}")
-                print(f"【调试】pie_mode: {pie_mode}")
-                
-                fig = ChartGenerator.create_chart(
-                    df=st.session_state.df,
-                    chart_type="复合饼图",
-                    level_cols=level_cols,      # 多级分类列
-                    value_col=value_col,
-                    pie_mode=pie_mode,
-                    max_categories=max_categories,
-                    format_numbers=format_numbers,
-                    title=f"{value_col} 按 {' → '.join(level_cols)} 分布" if show_title else None
-                )
-                
-                if fig:
-                    st.session_state.preview_manager.update_chart_preview(
-                        fig,
-                        f"复合饼图-{pie_mode}"
-                    )
-                    st.success(f"{pie_mode}复合饼图已生成，请查看主内容区")
-                    st.rerun()
-                else:
-                    st.error("图表生成失败，请检查数据")
-            except Exception as e:
-                st.error(f"生成失败: {str(e)}")
-                import traceback
-                traceback.print_exc()
+    # ========== 生成图表 ==========
+    from utils.chart_generator import ChartGenerator
     
-    # 数据预览
-    with st.expander("查看数据分布"):
-        st.write("**层级数据预览**")
-        preview_data = df.groupby(level_cols)[value_col].sum().reset_index()
-        st.dataframe(preview_data.head(20), use_container_width=True)
+    fig = ChartGenerator.create_chart(
+        df=st.session_state.df,
+        chart_type="复合饼图",
+        level_cols=level_cols,
+        value_col=value_col,
+        pie_mode=pie_mode,
+        max_categories=max_categories,
+        format_numbers=format_numbers,
+        title=f"{value_col} 按 {' → '.join(level_cols)} 分布" if show_title else None
+    )
+
+    # 交互下钻模式已经直接显示了图表
+    if pie_mode == "交互下钻":
+        # 图表已经在 _drilldown_layout 中显示，不需要额外操作
+        pass
+    elif fig is not None and len(fig.data) > 0:
+        st.session_state.preview_manager.update_chart_preview(fig, f"复合饼图-{pie_mode}")
+        st.success(f"{pie_mode}复合饼图已生成，请查看主内容区")
+    else:
+        st.error("图表生成失败，请检查数据")

@@ -70,7 +70,6 @@ class FileLoader:
             # 只有一个工作表，直接加载
             if len(sheet_names) == 1:
                 df = pd.read_excel(io.BytesIO(file_content), sheet_name=sheet_names[0])
-                print(f"【调试】加载单个工作表: {sheet_names[0]}，行数: {len(df)}, 列数: {len(df.columns)}")
                 return df
             
             # 多个工作表，显示选择器
@@ -113,7 +112,6 @@ class FileLoader:
             
             # 确认后从保存的内容加载数据
             df = pd.read_excel(io.BytesIO(state['content']), sheet_name=state['selected_sheet'])
-            print(f"【调试】已加载工作表: {state['selected_sheet']}，行数: {len(df)}, 列数: {len(df.columns)}")
             
             # 加载完成后清理状态
             del st.session_state[state_key]
