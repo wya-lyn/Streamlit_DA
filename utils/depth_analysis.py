@@ -22,27 +22,51 @@ class ChartRenderer:
 
 class PieChartRenderer(ChartRenderer):
     """饼图渲染器"""
-    
+    def test_click():
+        print("【测试】按钮被点击了！")
+        st.session_state.test_click = True
+        
     def render(self, df, x_col, y_col, title, config):
+        # 获取主题颜色
+        theme_mode = st.session_state.theme_mode
+        text_color = "#1A2634" if theme_mode == 'light' else "#E8EDFF"
+        
+        # 计算百分比
         total = df[y_col].sum()
         percentages = (df[y_col] / total * 100).round(1)
         
+        # 格式化数值
         if config.get('format_numbers', True):
             formatted_values = df[y_col].apply(self._format_number)
         else:
             formatted_values = df[y_col].round(2)
         
-        labels = [f"{name}<br>{val}<br>({pct}%)" 
-                  for name, val, pct in zip(df[x_col], formatted_values, percentages)]
+        # 扇区标签：类别名称 + 数值 + 百分比
+        sector_labels = [f"{name}<br>{val}<br>({pct}%)" 
+                         for name, val, pct in zip(df[x_col], formatted_values, percentages)]
         
         fig = go.Figure(data=[go.Pie(
-            labels=labels,
+            labels=sector_labels,           # 扇区显示完整信息
             values=df[y_col],
             hole=0.3,
-            textinfo='none',
+            textinfo='none',                # 使用自定义labels
             hoverinfo='label+percent+value',
             marker=dict(line=dict(color='#000000', width=1))
         )])
+        
+        # 图例：只显示类别名称
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(
+                title=x_col,
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=10, color=text_color)
+            )
+        )
         
         return fig
     
@@ -150,6 +174,13 @@ class DepthAnalysisEngine:
     
     def render(self, df, level_cols, value_col, chart_type, config):
         """渲染深度分析图表"""
+        print("=" * 50)
+        print("【调试】DepthAnalysisEngine.render 被调用")
+        print(f"【调试】chart_type: {chart_type}")
+        print(f"【调试】level_cols: {level_cols}")
+        print(f"【调试】value_col: {value_col}")
+        print("=" * 50)
+    
         
         # 获取主题颜色
         theme_mode = st.session_state.theme_mode
@@ -215,29 +246,67 @@ class DepthAnalysisEngine:
             else:
                 main_title = f"{current_col} {value_col}"
             
-            # 获取渲染器
-            renderer = self.renderers.get(chart_type)
-            if renderer is None:
-                st.error(f"不支持的图表类型: {chart_type}")
-                return
-            
-            fig = renderer.render(current_data, current_col, value_col, main_title, config)
-            
-            fig.update_layout(
-                title={
-                    'text': main_title,
-                    'x': 0.5,
-                    'xanchor': 'center',
-                    'font': dict(size=16, color=title_color)
-                },
-                font=dict(size=12, color=text_color),
-                height=450,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=20, r=20, t=50, b=20)
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+            # ========== 根据图表类型选择显示方式 ==========
+            if chart_type == "饼图":
+                # 直接使用旧版本的饼图代码（已验证可用）
+                legend_labels = current_data[current_col].tolist()
+                
+                fig = go.Figure(data=[go.Pie(
+                    labels=legend_labels,
+                    values=current_data[value_col].tolist(),
+                    hole=0.3,
+                    textinfo='none',
+                    hoverinfo='label+percent+value',
+                    marker=dict(line=dict(color='#000000', width=1))
+                )])
+                
+                fig.update_traces(
+                    textinfo='label+value+percent',
+                    textposition='inside',
+                    textfont=dict(size=11, color=text_color)
+                )
+                
+                fig.update_layout(
+                    title={
+                        'text': main_title,
+                        'x': 0.5,
+                        'xanchor': 'center',
+                        'font': dict(size=16, color=title_color)
+                    },
+                    font=dict(size=12, color=text_color),
+                    legend=dict(font=dict(size=11, color=text_color)),
+                    height=450,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=20, r=20, t=50, b=20)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+            else:
+                # 其他图表类型使用渲染器
+                renderer = self.renderers.get(chart_type)
+                if renderer is None:
+                    st.error(f"不支持的图表类型: {chart_type}")
+                    return
+                
+                fig = renderer.render(current_data, current_col, value_col, main_title, config)
+                
+                fig.update_layout(
+                    title={
+                        'text': main_title,
+                        'x': 0.5,
+                        'xanchor': 'center',
+                        'font': dict(size=16, color=title_color)
+                    },
+                    font=dict(size=12, color=text_color),
+                    height=450,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(l=20, r=20, t=50, b=20)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
             
             # 类别选择按钮
             st.markdown("**选择类别查看下级分布：**")
@@ -250,6 +319,7 @@ class DepthAnalysisEngine:
         
         # 右侧：下一层级预览
         with col2:
+            st.write(f"【调试】渲染右侧区域，next_col={next_col}, selected={selected}")
             if next_col is not None:
                 st.markdown(f"### 🔽 下级预览：{selected} 的 {next_col}")
                 
@@ -270,26 +340,57 @@ class DepthAnalysisEngine:
                     # 构建子图标题
                     sub_title = f"{path_values} → {selected} 的 {next_col} {value_col}" if current_path else f"{selected} 的 {next_col} {value_col}"
                     
-                    sub_fig = renderer.render(next_data, next_col, value_col, sub_title, config)
+                    # 根据图表类型选择显示方式
+                    if chart_type == "饼图":
+                        # 饼图使用旧版本代码
+                        legend_labels = next_data[next_col].tolist()
+                        
+                        sub_fig = go.Figure(data=[go.Pie(
+                            labels=legend_labels,
+                            values=next_data[value_col].tolist(),
+                            hole=0.3,
+                            textinfo='none',
+                            hoverinfo='label+percent+value',
+                            marker=dict(line=dict(color='#000000', width=1))
+                        )])
+                        
+                        sub_fig.update_traces(
+                            textinfo='label+value+percent',
+                            textposition='inside',
+                            textfont=dict(size=11, color=text_color)
+                        )
+                        
+                    else:
+                        # 其他图表类型使用渲染器
+                        renderer = self.renderers.get(chart_type)
+                        if renderer:
+                            sub_fig = renderer.render(next_data, next_col, value_col, sub_title, config)
+                        else:
+                            sub_fig = None
                     
-                    sub_fig.update_layout(
-                        title={
-                            'text': sub_title,
-                            'x': 0.5,
-                            'xanchor': 'center',
-                            'font': dict(size=16, color=title_color)
-                        },
-                        font=dict(size=12, color=text_color),
-                        height=450,
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        margin=dict(l=20, r=20, t=50, b=20)
-                    )
+                    if sub_fig:
+                        sub_fig.update_layout(
+                            title={
+                                'text': sub_title,
+                                'x': 0.5,
+                                'xanchor': 'center',
+                                'font': dict(size=16, color=title_color)
+                            },
+                            font=dict(size=12, color=text_color),
+                            height=450,
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            margin=dict(l=20, r=20, t=50, b=20)
+                        )
+                        
+                        st.plotly_chart(sub_fig, use_container_width=True)
                     
-                    st.plotly_chart(sub_fig, use_container_width=True)
-                    
-                    # 下钻按钮
-                    if st.button(f"🔽 下钻到 {selected}", key=f"depth_drilldown_{selected}"):
+                    # ========== 下钻按钮（缩进正确：在 if len(next_data) > 0 内，与 if sub_fig 同级）==========
+                    st.markdown("---")
+                    st.write(f"【调试】准备显示下钻按钮: {selected}")
+
+                    if st.button(f"🔽 下钻到 {selected}"):
+                        print(f"【调试】下钻按钮被点击: {selected}")
                         st.session_state.depth_path.append(selected)
                         st.session_state.depth_selected = None
                         st.rerun()
@@ -297,9 +398,11 @@ class DepthAnalysisEngine:
                     st.info(f"{selected} 没有下级数据")
             else:
                 st.info("已到达最深层，无法继续下钻")
-        
-        # 添加返回控件
-        self._add_controls(current_path, level_cols)
+                
+                # 添加返回控件
+                self._add_controls(current_path, level_cols)
+                
+
     
     def _show_detail_table(self, df, value_col, path, level_cols, config):
         """显示详细数据表（最深层）"""

@@ -732,29 +732,36 @@ def render_pivot_with_chart():
 
 
 def render_composite_pie_chart():
-    """复合饼图（四种模式）"""
-    st.markdown("#### 🥧 复合饼图")
+    """深度分析 - 支持下钻的多种图表"""
+    st.markdown("#### 🔍 深度分析")
     
     df = st.session_state.df
     
     # 获取所有列
     all_cols = df.columns.tolist()
-    
-    # 获取数值列
     numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     
     if not numeric_cols:
-        st.warning("需要数值列才能生成复合饼图")
+        st.warning("需要数值列才能进行深度分析")
         return
     
-    # 分类列多选（按顺序作为层级）
+    # 图表类型选择
+    st.markdown("##### 图表类型")
+    chart_type = st.radio(
+        "选择图表类型",
+        ["饼图", "柱状图", "条形图", "折线图"],
+        key="depth_chart_type",
+        horizontal=True
+    )
+    
+    # 层级设置
     st.markdown("##### 层级设置")
     st.caption("按选择顺序作为下钻层级（第一级 → 第二级 → ...）")
     
     level_cols = st.multiselect(
         "选择分类列（按顺序选择）",
         all_cols,
-        key="composite_levels",
+        key="depth_levels",
         placeholder="请至少选择一个分类列"
     )
     
@@ -762,7 +769,7 @@ def render_composite_pie_chart():
     value_col = st.selectbox(
         "数值列",
         numeric_cols,
-        key="composite_value"
+        key="depth_value"
     )
     
     if not level_cols:
@@ -776,13 +783,16 @@ def render_composite_pie_chart():
             st.write(f"  {i+1}. {col}")
         st.write(f"数值列：{value_col}")
     
-    # 模式选择
-    pie_mode = st.radio(
-        "复合饼图模式",
-        ["交互下钻", "子图布局", "复合定位", "南丁格尔玫瑰图"],
-        key="composite_pie_mode",
-        horizontal=True
-    )
+    # 饼图模式选项（仅饼图时显示）
+    pie_mode = None
+    if chart_type == "饼图":
+        st.markdown("##### 饼图模式")
+        pie_mode = st.radio(
+            "选择饼图模式",
+            ["交互下钻", "子图布局", "南丁格尔玫瑰图", "复合定位"],
+            key="depth_pie_mode",
+            horizontal=True
+        )
     
     # 高级选项
     with st.expander("高级选项"):
@@ -791,31 +801,67 @@ def render_composite_pie_chart():
             min_value=3,
             max_value=10,
             value=5,
-            key="composite_max_cat"
+            key="depth_max_cat"
         )
-        show_title = st.checkbox("显示图表标题", value=True, key="composite_title")
-        format_numbers = st.checkbox("格式化数值（万/亿）", value=True, key="composite_format")
+        format_numbers = st.checkbox("格式化数值（万/亿）", value=True, key="depth_format")
     
-    # ========== 生成图表 ==========
-    from utils.chart_generator import ChartGenerator
+    # ========== 深度分析状态 ==========
+    if 'depth_path' not in st.session_state:
+        st.session_state.depth_path = []
+    if 'depth_selected' not in st.session_state:
+        st.session_state.depth_selected = None
     
-    fig = ChartGenerator.create_chart(
-        df=st.session_state.df,
-        chart_type="复合饼图",
-        level_cols=level_cols,
-        value_col=value_col,
-        pie_mode=pie_mode,
-        max_categories=max_categories,
-        format_numbers=format_numbers,
-        title=f"{value_col} 按 {' → '.join(level_cols)} 分布" if show_title else None
-    )
-
-    # 交互下钻模式已经直接显示了图表
-    if pie_mode == "交互下钻":
-        # 图表已经在 _drilldown_layout 中显示，不需要额外操作
-        pass
-    elif fig is not None and len(fig.data) > 0:
-        st.session_state.preview_manager.update_chart_preview(fig, f"复合饼图-{pie_mode}")
-        st.success(f"{pie_mode}复合饼图已生成，请查看主内容区")
+    # ========== 重置按钮 ==========
+    col_reset, col_empty = st.columns([1, 5])
+    with col_reset:
+        if st.button("🔄 重置", key="depth_reset"):
+            st.session_state.depth_path = []
+            st.session_state.depth_selected = None
+            st.rerun()
+    
+    # ========== 判断是否需要使用深度分析引擎 ==========
+    # 需要深度分析的场景：
+    # 1. 非饼图（柱状图、条形图、折线图）
+    # 2. 饼图的交互下钻模式
+    use_depth_engine = (chart_type != "饼图") or (pie_mode == "交互下钻")
+    
+    if use_depth_engine:
+        # 使用深度分析引擎（支持下钻）
+        from utils.depth_analysis import DepthAnalysisEngine
+        
+        engine = DepthAnalysisEngine()
+        config = {
+            'max_categories': max_categories,
+            'format_numbers': format_numbers
+        }
+        
+        engine.render(
+            df=st.session_state.df,
+            level_cols=level_cols,
+            value_col=value_col,
+            chart_type=chart_type,
+            config=config
+        )
     else:
-        st.error("图表生成失败，请检查数据")
+        # 原有的复合饼图逻辑（子图布局、复合定位、玫瑰图）
+        from utils.chart_generator import ChartGenerator
+        
+        fig = ChartGenerator.create_chart(
+            df=st.session_state.df,
+            chart_type="复合饼图",
+            level_cols=level_cols,
+            value_col=value_col,
+            pie_mode=pie_mode,
+            max_categories=max_categories,
+            format_numbers=format_numbers,
+            title=f"{value_col} 按 {' → '.join(level_cols)} 分布"
+        )
+        
+        if fig:
+            st.session_state.preview_manager.update_chart_preview(
+                fig,
+                f"深度分析-{pie_mode}"
+            )
+            st.success(f"{pie_mode}深度分析已生成，请查看主内容区")
+        else:
+            st.error("图表生成失败，请检查数据")
