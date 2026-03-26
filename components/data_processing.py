@@ -6,9 +6,171 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+
 from utils.data_cleaner import DataCleaner
 from utils.logger import Logger
+from utils.data_filter import DataFilter
+from utils.data_templates import PROCESSING_TEMPLATES  # 添加这行
 
+
+# ============================================
+# 一键处理面板
+# ============================================
+
+def _execute_step(step):
+    """执行单个处理步骤"""
+    step_type = step["type"]
+    params = step.get("params", {})
+    
+    if step_type == "提升为标题":
+        row_number = params.get("row_number", 1)
+        _promote_to_header(row_number)
+        
+    elif step_type == "类型转换":
+        column = params.get("column")
+        target_type = params.get("target_type")
+        if column and target_type:
+            execute_data_operation(st.session_state.df, st.session_state.df, "类型转换", column, target_type)
+        
+    elif step_type == "去重":
+        subset = params.get("subset", [])
+        keep = params.get("keep", "first")
+        execute_data_operation(st.session_state.df, st.session_state.df, "去重", subset=subset, keep=keep)
+        
+    elif step_type == "删除空列":
+        execute_data_operation(st.session_state.df, st.session_state.df, "删除空列", [])
+        
+    elif step_type == "删除列":
+        columns = params.get("columns", [])
+        if columns:
+            execute_data_operation(st.session_state.df, st.session_state.df, "删除列", columns)
+        
+    elif step_type == "替换":
+        column = params.get("column")
+        old = params.get("old")
+        new = params.get("new")
+        mode = params.get("mode", "文本替换")
+        if mode == "文本替换":
+            execute_data_operation(st.session_state.df, st.session_state.df, "文本替换", column, old, new)
+        elif mode == "空值替换":
+            execute_data_operation(st.session_state.df, st.session_state.df, "空值替换", column, new)
+        
+    elif step_type == "分列":
+        column = params.get("column")
+        separator = params.get("separator")
+        mode = params.get("mode", "最左分隔符")
+        if column and separator:
+            execute_data_operation(st.session_state.df, st.session_state.df, "分列", column, separator, mode)
+        
+    elif step_type == "修改表头":
+        old_name = params.get("old_name")
+        new_name = params.get("new_name")
+        if old_name and new_name and old_name in st.session_state.df.columns:
+            st.session_state.df = st.session_state.df.rename(columns={old_name: new_name})
+        
+    elif step_type == "筛选":
+        column = params.get("column")
+        condition = params.get("condition")
+        value = params.get("value")
+        if column:
+            from utils.data_filter import DataFilter
+            filter_obj = DataFilter()
+            if condition == "不等于":
+                st.session_state.df = st.session_state.df[st.session_state.df[column] != value]
+            elif condition == "不为空":
+                st.session_state.df = st.session_state.df[st.session_state.df[column].notna()]
+            elif condition == "为空":
+                st.session_state.df = st.session_state.df[st.session_state.df[column].isna()]
+            else:
+                st.session_state.df = filter_obj.text_filter(st.session_state.df, column, condition, str(value))
+
+
+def _promote_to_header(row_number):
+    """将指定行提升为标题"""
+    try:
+        df = st.session_state.df
+        if row_number <= 0 or row_number > len(df):
+            st.warning(f"行号 {row_number} 超出范围")
+            return
+        
+        new_columns = df.iloc[row_number - 1].tolist()
+        
+        final_columns = []
+        seen = {}
+        for col in new_columns:
+            col_str = str(col) if col is not None else ""
+            if col_str == "" or col_str == "nan":
+                col_str = "列"
+            if col_str in seen:
+                seen[col_str] += 1
+                col_str = f"{col_str}_{seen[col_str]}"
+            else:
+                seen[col_str] = 1
+            final_columns.append(col_str)
+        
+        new_df = df.iloc[row_number:].reset_index(drop=True)
+        new_df.columns = final_columns
+        
+        st.session_state.df = new_df
+        st.session_state.preview_manager.record_operation(f"提升第{row_number}行为标题")
+        
+    except Exception as e:
+        st.error(f"提升标题失败: {str(e)}")
+
+
+def render_quick_process():
+    """一键处理面板（7个单选按钮）"""
+    st.markdown("### ⚡ 一键处理模板")
+    st.caption("选择数据处理模板，一键执行预设操作")
+    
+    template_ids = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
+    
+    # 显示7个模板按钮（每行4个）
+    cols = st.columns(4)
+    selected_template = None
+    
+    for i, tid in enumerate(template_ids):
+        template = PROCESSING_TEMPLATES.get(tid, {})
+        name = template.get("name", f"模板{tid}")
+        col_idx = i % 4
+        with cols[col_idx]:
+            if st.button(f"📋 {name}", key=f"template_btn_{tid}", use_container_width=True):
+                selected_template = tid
+                st.session_state.selected_template = tid
+    
+    # 如果有选中的模板，显示详情和执行按钮
+    current_tid = selected_template or st.session_state.get('selected_template')
+    if current_tid:
+        template = PROCESSING_TEMPLATES.get(current_tid, {})
+        if template:
+            st.markdown("---")
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                st.markdown(f"**{template['name']}**")
+                st.caption(template['description'])
+            
+            with col2:
+                if st.button("🔍 查看步骤", key=f"show_steps_{current_tid}", use_container_width=True):
+                    with st.expander(f"{template['name']} 处理步骤", expanded=True):
+                        for i, step in enumerate(template['steps'], 1):
+                            st.write(f"{i}. {step['type']}: {step.get('params', {})}")
+            
+            with col3:
+                if st.button("🚀 执行模板", key=f"execute_{current_tid}", use_container_width=True, type="primary"):
+                    if not template['steps']:
+                        st.warning(f"模板 '{template['name']}' 尚未配置处理步骤")
+                    else:
+                        with st.spinner(f"正在执行 {template['name']}..."):
+                            for step in template['steps']:
+                                _execute_step(step)
+                            st.success(f"{template['name']} 执行完成！")
+                            st.rerun()
+
+
+# ============================================
+# 数据处理标签页主函数
+# ============================================
 
 def render_data_processing_tab():
     """数据处理标签页"""
@@ -16,34 +178,34 @@ def render_data_processing_tab():
         st.info("请先上传数据")
         return
     
+    # ===== 一键处理面板 =====
+    render_quick_process()
+    
+    st.markdown("---")
+    
     # ===== 全局操作栏 =====
     st.markdown("### ⚡ 全局操作")
     col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
-    
     with col1:
         if st.button("↩️ 撤销", key="global_undo", use_container_width=True):
             undo_last_operation()
-    
     with col2:
         if st.button("↪️ 重做", key="global_redo", use_container_width=True):
             redo_last_operation()
-    
     with col3:
         if st.button("📋 历史", key="global_history", use_container_width=True):
             show_global_history()
-    
     with col4:
         if st.button("🔄 重置", key="global_reset", use_container_width=True):
             if st.session_state.original_df is not None:
-                # 直接重置，不添加确认复选框（或改用弹窗）
                 st.session_state.preview_manager.record_operation("重置到原始数据")
                 st.session_state.df = st.session_state.original_df.copy()
                 st.success("已重置到初始状态")
                 st.rerun()
             else:
                 st.warning("没有原始数据可重置")
-        
-        st.divider()
+    
+    st.divider()
     
     # ===== 数据清洗（8个标签页）=====
     st.markdown("### 🧹 数据清洗")
@@ -51,25 +213,18 @@ def render_data_processing_tab():
     
     with clean_tabs[0]:
         render_deduplicate_section()
-    
     with clean_tabs[1]:
         render_replace_value_section()
-    
     with clean_tabs[2]:
         render_convert_type_section()
-    
     with clean_tabs[3]:
         render_split_column_section()
-    
     with clean_tabs[4]:
         render_merge_columns_section()
-    
     with clean_tabs[5]:
         render_rename_columns_section()
-    
     with clean_tabs[6]:
         render_delete_columns_section()
-    
     with clean_tabs[7]:
         render_filter_section_in_tab()
     
