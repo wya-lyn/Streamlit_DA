@@ -19,6 +19,10 @@ from utils.data_templates import PROCESSING_TEMPLATES  # 添加这行
 
 def _execute_step(step):
     """执行单个处理步骤"""
+    import re
+    import pandas as pd
+    from utils.data_filter import DataFilter
+    
     step_type = step["type"]
     params = step.get("params", {})
     
@@ -28,9 +32,64 @@ def _execute_step(step):
         
     elif step_type == "类型转换":
         column = params.get("column")
+        columns = params.get("columns", [])
         target_type = params.get("target_type")
-        if column and target_type:
-            execute_data_operation(st.session_state.df, st.session_state.df, "类型转换", column, target_type)
+        
+        def clean_and_convert(val):
+            """清理并转换为目标类型"""
+            if target_type == "数值":
+                # 处理字符串
+                if isinstance(val, str):
+                    # 移除千分位逗号
+                    val = val.replace(',', '')
+                    # 移除不可见字符（控制字符、零宽空格等）
+                    val = re.sub(r'[\x00-\x1f\x7f\u200b\u200c\u200d\u2060\uFEFF]', '', val)
+                    val = val.strip()
+                    # 处理负数括号格式 (123.45) -> -123.45
+                    if val.startswith('(') and val.endswith(')'):
+                        val = '-' + val[1:-1]
+                # 转换为数值
+                try:
+                    return pd.to_numeric(val, errors='coerce')
+                except:
+                    return None
+                    
+            elif target_type == "文本":
+                if hasattr(val, 'astype'):
+                    return val.astype(str)
+                else:
+                    return str(val)
+                    
+            elif target_type == "日期时间":
+                try:
+                    return pd.to_datetime(val, errors='coerce')
+                except:
+                    return None
+                    
+            elif target_type == "百分比":
+                # 处理百分比字符串如 "12.5%"
+                if isinstance(val, str):
+                    val = val.replace('%', '').strip()
+                    try:
+                        return float(val) / 100
+                    except:
+                        return None
+                return val
+            else:
+                return val
+        
+        # 处理单列
+        if column and column in st.session_state.df.columns:
+            st.session_state.df[column] = st.session_state.df[column].apply(clean_and_convert)
+        
+        # 处理多列
+        if columns:
+            for col in columns:
+                if col in st.session_state.df.columns:
+                    st.session_state.df[col] = st.session_state.df[col].apply(clean_and_convert)
+        
+        # 记录操作
+        st.session_state.preview_manager.record_operation(f"类型转换-{target_type}")
         
     elif step_type == "去重":
         subset = params.get("subset", [])
@@ -50,10 +109,11 @@ def _execute_step(step):
         old = params.get("old")
         new = params.get("new")
         mode = params.get("mode", "文本替换")
-        if mode == "文本替换":
-            execute_data_operation(st.session_state.df, st.session_state.df, "文本替换", column, old, new)
-        elif mode == "空值替换":
-            execute_data_operation(st.session_state.df, st.session_state.df, "空值替换", column, new)
+        if column:
+            if mode == "文本替换":
+                execute_data_operation(st.session_state.df, st.session_state.df, "文本替换", column, old, new)
+            elif mode == "空值替换":
+                execute_data_operation(st.session_state.df, st.session_state.df, "空值替换", column, new)
         
     elif step_type == "分列":
         column = params.get("column")
@@ -73,8 +133,6 @@ def _execute_step(step):
         condition = params.get("condition")
         value = params.get("value")
         if column:
-            from utils.data_filter import DataFilter
-            filter_obj = DataFilter()
             if condition == "不等于":
                 st.session_state.df = st.session_state.df[st.session_state.df[column] != value]
             elif condition == "不为空":
@@ -82,7 +140,35 @@ def _execute_step(step):
             elif condition == "为空":
                 st.session_state.df = st.session_state.df[st.session_state.df[column].isna()]
             else:
+                filter_obj = DataFilter()
                 st.session_state.df = filter_obj.text_filter(st.session_state.df, column, condition, str(value))
+        
+    elif step_type == "清理字符":
+        column = params.get("column")
+        columns = params.get("columns", [])
+        
+        def clean_text(text):
+            """清理不可见字符"""
+            if isinstance(text, str):
+                # 移除控制字符（ASCII 0-31 和 127）
+                text = re.sub(r'[\x00-\x1f\x7f]', '', text)
+                # 移除零宽空格等特殊 Unicode 字符
+                text = re.sub(r'[\u200b\u200c\u200d\u2060\uFEFF]', '', text)
+                # 移除首尾空格
+                text = text.strip()
+            return text
+        
+        # 处理单列
+        if column and column in st.session_state.df.columns:
+            st.session_state.df[column] = st.session_state.df[column].apply(clean_text)
+        
+        # 处理多列
+        if columns:
+            for col in columns:
+                if col in st.session_state.df.columns:
+                    st.session_state.df[col] = st.session_state.df[col].apply(clean_text)
+        
+        st.session_state.preview_manager.record_operation("清理字符")
 
 
 def _promote_to_header(row_number):

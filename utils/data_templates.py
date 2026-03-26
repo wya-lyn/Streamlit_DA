@@ -22,13 +22,14 @@ PROCESSING_TEMPLATES = {
             {"type": "修改表头", "params": {"old_name": "选择_1_1_2", "new_name": "对阵"}},
             {"type": "修改表头", "params": {"old_name": "选择_1_2", "new_name": "联赛"}},
             {"type": "修改表头", "params": {"old_name": "选择_2", "new_name": "开赛时间"}},
-            {"type": "修改表头", "params": {"old_name": "状态_1", "new_name": "输赢"}},
+            {"type": "修改表头", "params": {"old_name": "状态_1", "new_name": "输赢状态"}},
             {"type": "修改表头", "params": {"old_name": "状态_2", "new_name": "IP"}},
             {"type": "筛选", "params": {"column": "交易时间", "condition": "不等于", "value": "总和"}},
             {"type": "筛选", "params": {"column": "注单号码", "condition": "不为空"}},
             {"type": "类型转换", "params": {"column": "开赛时间", "target_type": "文本"}},
             {"type": "类型转换", "params": {"column": "交易时间", "target_type": "日期时间"}},
-            {"type": "删除列", "params": {"columns": ["选择","选择_1", "状态", "选择_1_1","选择_1_1_1","注单号码","系统账号"]}}
+            {"type": "删除列", "params": {"columns": ["选择","选择_1", "状态", "选择_1_1","选择_1_1_1","注单号码","系统账号"]}},
+            {"type": "类型转换", "params": {"columns": [ "承租公司輸贏/佣金","投注额"], "target_type": "数值"}}
         ]
     },
     
