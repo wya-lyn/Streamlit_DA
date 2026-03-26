@@ -19,6 +19,7 @@ venv.bak/
 # Streamlit
 .streamlit/secrets.toml
 .streamlit/config.toml
+*.toml
 
 # 数据文件
 *.csv

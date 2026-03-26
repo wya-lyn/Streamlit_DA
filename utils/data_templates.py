@@ -5,6 +5,7 @@
 import streamlit as st
 import hashlib
 
+
 def get_stored_password():
     """从 secrets 获取存储的密码"""
     try:
@@ -50,6 +51,7 @@ PROCESSING_TEMPLATES = {
         {"type": "分列", "params": {"column": "选择", "separator": "\n", "mode": "最右分隔符"}},
         {"type": "分列", "params": {"column": "选择_1", "separator": "\n", "mode": "最右分隔符"}},
         {"type": "分列", "params": {"column": "选择_1_1", "separator": "\n", "mode": "最右分隔符"}},
+        {"type": "分列", "params": {"column": "选择_1_1_1", "separator": "\n", "mode": "最右分隔符"}},
         
         {"type": "修改表头", "params": {"old_name": "选择_1_1_1_1", "new_name": "下注项"}},
         {"type": "修改表头", "params": {"old_name": "选择_1_1_1_2", "new_name": "玩法"}},
