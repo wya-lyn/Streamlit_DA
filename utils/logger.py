@@ -1,3 +1,4 @@
+# utils/logger.py
 """
 调试日志模块
 """
@@ -14,7 +15,7 @@ class Logger:
         timestamp = datetime.now().strftime('%H:%M:%S')
         log_entry = f"✅ [{timestamp}] {message}"
         Logger._logs.append(log_entry)
-        print(log_entry)  # 输出到控制台
+        print(log_entry)
     
     @staticmethod
     def error(message):
@@ -25,11 +26,10 @@ class Logger:
         print(log_entry)
     
     @staticmethod
-    def get_logs():
-        """获取日志"""
-        return Logger._logs
-    
-    @staticmethod
-    def clear():
-        """清空日志"""
-        Logger._logs = []
+    def show_logs():
+        """显示日志面板（需要在有 streamlit 的环境调用）"""
+        import streamlit as st
+        if Logger._logs:
+            with st.expander("📋 调试日志", expanded=False):
+                for log in Logger._logs[-10:]:
+                    st.text(log)
