@@ -612,7 +612,7 @@ def render_data_preview_page():
     with col2:
         st.write("")
     
-    # 数据基本信息（Metric 卡片）
+    # 数据基本信息
     render_data_info()
     
     # 预览行数设置
@@ -633,10 +633,18 @@ def render_data_preview_page():
     
     # 显示数据预览
     st.markdown("### 当前数据预览")
-    preview_df = st.session_state.df.head(preview_rows)
+    
+    # 获取预览数据并确保类型安全
+    preview_df = st.session_state.df.head(preview_rows).copy()
+    
+    # 将所有 object 类型列转换为字符串（避免 Arrow 序列化问题）
+    for col in preview_df.columns:
+        if preview_df[col].dtype == 'object':
+            preview_df[col] = preview_df[col].astype(str)
+    
     st.dataframe(preview_df, use_container_width=True, hide_index=True)
     
-    # 显示列信息（可折叠）
+    # 显示列信息
     with st.expander("查看列信息", expanded=False):
         render_column_info()
     
@@ -684,17 +692,16 @@ def render_column_info():
     """显示列信息"""
     df = st.session_state.df
     
-    # 过滤掉无列名的列
-    valid_cols = [col for col in df.columns if col != '' and col is not None]
-    
+    # 确保所有列名和数据类型都是字符串
     col_info = pd.DataFrame({
-        '列名': valid_cols,
-        '数据类型': [df[col].dtype for col in valid_cols],
-        '非空值数': [df[col].count() for col in valid_cols],
-        '缺失值数': [df[col].isna().sum() for col in valid_cols],
-        '唯一值数': [df[col].nunique() for col in valid_cols]
+        '列名': [str(col) for col in df.columns],
+        '数据类型': [str(df[col].dtype) for col in df.columns],
+        '非空值数': df.count().values,
+        '缺失值数': df.isna().sum().values,
+        '唯一值数': [df[col].nunique() for col in df.columns]
     })
     
+    # 重置索引并显示
     col_info = col_info.reset_index(drop=True)
     st.dataframe(col_info, use_container_width=True, hide_index=True)
 
