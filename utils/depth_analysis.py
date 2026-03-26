@@ -22,9 +22,6 @@ class ChartRenderer:
 
 class PieChartRenderer(ChartRenderer):
     """饼图渲染器"""
-    def test_click():
-        print("【测试】按钮被点击了！")
-        st.session_state.test_click = True
         
     def render(self, df, x_col, y_col, title, config):
         # 获取主题颜色
@@ -173,15 +170,7 @@ class DepthAnalysisEngine:
         }
     
     def render(self, df, level_cols, value_col, chart_type, config):
-        """渲染深度分析图表"""
-        print("=" * 50)
-        print("【调试】DepthAnalysisEngine.render 被调用")
-        print(f"【调试】chart_type: {chart_type}")
-        print(f"【调试】level_cols: {level_cols}")
-        print(f"【调试】value_col: {value_col}")
-        print("=" * 50)
     
-        
         # 获取主题颜色
         theme_mode = st.session_state.theme_mode
         text_color = "#1A2634" if theme_mode == 'light' else "#E8EDFF"
@@ -319,7 +308,6 @@ class DepthAnalysisEngine:
         
         # 右侧：下一层级预览
         with col2:
-            st.write(f"【调试】渲染右侧区域，next_col={next_col}, selected={selected}")
             if next_col is not None:
                 st.markdown(f"### 🔽 下级预览：{selected} 的 {next_col}")
                 
@@ -387,10 +375,8 @@ class DepthAnalysisEngine:
                     
                     # ========== 下钻按钮（缩进正确：在 if len(next_data) > 0 内，与 if sub_fig 同级）==========
                     st.markdown("---")
-                    st.write(f"【调试】准备显示下钻按钮: {selected}")
 
                     if st.button(f"🔽 下钻到 {selected}"):
-                        print(f"【调试】下钻按钮被点击: {selected}")
                         st.session_state.depth_path.append(selected)
                         st.session_state.depth_selected = None
                         st.rerun()

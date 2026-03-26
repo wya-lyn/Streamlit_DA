@@ -18,7 +18,6 @@ class Logger:
             st.session_state.debug_logs = []
         
         st.session_state.debug_logs.append(log_entry)
-        print(log_entry)  # 同时在控制台输出
     
     @staticmethod
     def error(message):
@@ -30,7 +29,6 @@ class Logger:
             st.session_state.debug_logs = []
         
         st.session_state.debug_logs.append(log_entry)
-        print(log_entry)
     
     @staticmethod
     def show_logs():

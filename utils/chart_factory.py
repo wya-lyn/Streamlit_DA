@@ -396,7 +396,6 @@ class CompositePieChart(BaseChart):
         )
         
         fig = self.apply_theme(fig, config)
-        print(fig.title.text + "------------------测试------------------")
         return fig
     
     def _drilldown_layout(self, df, level_cols, value_col, config):
@@ -517,9 +516,6 @@ class CompositePieChart(BaseChart):
             for i, cat in enumerate(current_data[current_col].tolist()):
                 with cols[i % len(cols)]:
                     if st.button(cat, key=f"select_{cat}_{current_level}"):
-                        print(f"【调试】current_col: {current_col}")
-                        print(f"【调试】current_col 类型: {type(current_col)}")
-                        print(f"【调试】current_col 是否为 None: {current_col is None}")
                         st.session_state.selected_category = cat
                         st.rerun()
         
@@ -737,13 +733,9 @@ class CompositePieChart(BaseChart):
     
     def _get_breadcrumb(self, path, level_cols):
         """获取面包屑导航"""
-        print(f"【调试】_get_breadcrumb 被调用")
-        print(f"【调试】path: {path}")
-        print(f"【调试】level_cols: {level_cols}")
         
         if not path:
             result = "当前：顶层"
-            print(f"【调试】返回: {result}")
             return result
         
         breadcrumb = []
@@ -752,7 +744,6 @@ class CompositePieChart(BaseChart):
                 breadcrumb.append(f"{level_cols[i]}: {val}")
         
         result = " → ".join(breadcrumb)
-        print(f"【调试】返回: {result}")
         return result
     
     def _add_drilldown_controls(self, path, level_cols):
@@ -766,4 +757,3 @@ class CompositePieChart(BaseChart):
                     st.session_state.selected_category = None
                     st.rerun()
             st.caption(f"📍 当前位置：{self._get_breadcrumb(path, level_cols)}")
-            print(f"📍 当前位置：{self._get_breadcrumb(path, level_cols)}")

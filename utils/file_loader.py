@@ -206,13 +206,6 @@ class FileLoader:
                 flattened_data.append(flattened_row)
             else:
                 flattened_data.append({'_value': row})
-
-        # 打印第一行的所有键
-        if flattened_data:
-            print(f"【调试】第一行的键: {list(flattened_data[0].keys())}")
-            print(f"【调试】第一行的键数量: {len(flattened_data[0].keys())}")
-        odds_keys = [k for k in flattened_data[0].keys() if 'oddsInternational' in k]
-        print(f"【调试】包含 oddsInternational 的键: {odds_keys}")
         
         # 创建 DataFrame
         df = pd.DataFrame(flattened_data)

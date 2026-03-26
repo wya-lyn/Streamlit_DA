@@ -6,7 +6,9 @@ import streamlit as st
 import json
 import os
 from datetime import datetime
+import time
 from utils.theme_manager import ThemeManager
+
 
 class AnnouncementManager:
     """公告管理器"""
@@ -52,47 +54,29 @@ class AnnouncementManager:
             return True
     
     def show_announcements(self):
-        """显示公告"""
+        """显示第一条有效公告"""
         if not self.announcements.get("enabled", False):
             return
         
-        theme = ThemeManager.get_current_theme()
-        
+        # 获取有效公告
+        valid_announcements = []
         for ann in self.announcements.get("announcements", []):
             if self._is_valid(ann):
-                ann_type = ann.get("type", "info")
-                content = ann.get("content", "")
-                ann_id = ann.get("id", "")
-                dismissible = ann.get("dismissible", True)
-                
-                # 检查是否已关闭
-                if dismissible and f"announcement_closed_{ann_id}" in st.session_state:
-                    continue
-                
-                # 根据类型显示不同样式
-                if ann_type == "info":
-                    st.markdown(f"""
-                    <div class="announcement-info">
-                        ℹ️ {content}
-                    </div>
-                    """, unsafe_allow_html=True)
-                elif ann_type == "warning":
-                    st.markdown(f"""
-                    <div class="announcement-warning">
-                        ⚠️ {content}
-                    </div>
-                    """, unsafe_allow_html=True)
-                elif ann_type == "success":
-                    st.markdown(f"""
-                    <div class="announcement-success">
-                        ✅ {content}
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                # 可关闭按钮
-                if dismissible:
-                    col1, col2 = st.columns([10, 1])
-                    with col2:
-                        if st.button("✕", key=f"close_{ann_id}"):
-                            st.session_state[f"announcement_closed_{ann_id}"] = True
-                            st.rerun()
+                valid_announcements.append(ann)
+        
+        if not valid_announcements:
+            return
+        
+        # 只取第一条公告
+        current = valid_announcements[0]
+        
+        ann_type = current.get("type", "info")
+        content = current.get("content", "")
+        
+        # 显示公告
+        if ann_type == "info":
+            st.info(f"📢 {content}")
+        elif ann_type == "warning":
+            st.warning(f"⚠️ {content}")
+        elif ann_type == "success":
+            st.success(f"✅ {content}")

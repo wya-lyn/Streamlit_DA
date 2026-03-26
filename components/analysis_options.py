@@ -24,7 +24,7 @@ def render_analysis_options_tab():
         "📊 分组统计", 
         "⏱️ 时间序列", 
         "📐 数据透视表",
-        "🥧 复合饼图"
+        "🥧 深度分析"
     ])
     
     with analysis_tabs[0]:
@@ -799,9 +799,10 @@ def render_composite_pie_chart():
         max_categories = st.slider(
             "最大显示类别数",
             min_value=3,
-            max_value=10,
-            value=5,
-            key="depth_max_cat"
+            max_value=15,
+            value=11,
+            key="depth_max_cat",
+            help="超过此数量的类别将合并为'其他'"
         )
         format_numbers = st.checkbox("格式化数值（万/亿）", value=True, key="depth_format")
     

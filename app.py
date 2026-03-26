@@ -109,7 +109,6 @@ def init_session_state():
         st.session_state.last_uploaded_file = None  # 记录上次上传的文件名
     if 'preview_manager' not in st.session_state:
         st.session_state.preview_manager = PreviewManager()
-        print("【调试】preview_manager 已初始化")
         # 添加缺失的键
     if 'operation_history' not in st.session_state:
         st.session_state.operation_history = []
@@ -698,7 +697,6 @@ def render_column_info():
     
     col_info = col_info.reset_index(drop=True)
     st.dataframe(col_info, use_container_width=True, hide_index=True)
-    print(df.columns)
 
 def render_data_export():
     """数据导出功能"""
@@ -746,8 +744,6 @@ def render_data_export():
 
 def render_analysis_preview_page():
     """统计分析预览页面"""
-    print("="*50)
-    print("【调试】进入 render_analysis_preview_page 函数")
     
     st.markdown("## 📊 统计分析预览")
     # 直接调用预览管理器的显示方法
@@ -762,19 +758,13 @@ def render_analysis_preview_page():
     
     # 检查预览管理器
     if not hasattr(st.session_state, 'preview_manager'):
-        print("【调试】错误: preview_manager 不存在")
         st.error("预览管理器未初始化")
         return
     
     # 获取统计预览
     stats = st.session_state.preview_manager.get_stats_preview()
-    print(f"【调试】get_stats_preview 返回: {stats is not None}")
     
     if stats and stats['data'] is not None:
-        print(f"【调试】找到统计结果")
-        print(f"【调试】统计类型: {stats['type']}")
-        print(f"【调试】统计形状: {stats['data'].shape}")
-        print(f"【调试】统计内容:\n{stats['data']}")
         
         st.markdown(f"### {stats['type']}")
         st.dataframe(stats['data'], use_container_width=True)
@@ -789,7 +779,6 @@ def render_analysis_preview_page():
                 mime="text/csv"
             )
     else:
-        print("【调试】没有统计结果可显示")
         st.info("暂无统计预览，请先在右侧面板执行统计分析")
         
         # 快速入口
@@ -803,14 +792,9 @@ def render_analysis_preview_page():
             if st.button("📈 生成相关性分析", key="quick_correlation"):
                 st.info("请在右侧面板选择分析方法")
     
-    print("【调试】render_analysis_preview_page 函数执行完毕")
-    print("="*50)
 
 def render_chart_preview_page():
     """图表预览页面"""
-    print("="*50)
-    print("【调试】进入 render_chart_preview_page 函数")
-    print(f"【调试】当前时间: {datetime.now().strftime('%H:%M:%S')}")
     
     st.markdown("## 📈 图表预览")
     # 直接调用预览管理器的显示方法
@@ -825,25 +809,16 @@ def render_chart_preview_page():
     
     # 检查预览管理器
     if not hasattr(st.session_state, 'preview_manager'):
-        print("【调试】错误: preview_manager 不存在于 session_state")
         st.error("预览管理器未初始化")
         return
     
-    print(f"【调试】preview_manager 存在")
-    print(f"【调试】当前预览模式: {st.session_state.get('preview_mode', '未设置')}")
-    
     # 显示图表预览
     chart = st.session_state.preview_manager.get_chart_preview()
-    print(f"【调试】get_chart_preview 返回: {chart is not None}")
     
     if chart and chart['figure'] is not None:
-        print(f"【调试】找到图表，开始显示")
-        print(f"【调试】图表类型: {chart.get('type', '未知')}")
-        print(f"【调试】图表时间戳: {chart.get('timestamp', '未知')}")
         
         st.markdown(f"### {chart['type']}")
         st.plotly_chart(chart['figure'], use_container_width=True)
-        print(f"【调试】图表显示完成")
         
         # 图表导出
         with st.expander("图表导出选项"):
@@ -858,15 +833,12 @@ def render_chart_preview_page():
                 if st.button("📥 SVG", key="preview_export_svg"):
                     st.info("导出功能预留")
     else:
-        print(f"【调试】没有图表可显示")
         st.info("暂无图表预览，请先在右侧面板生成图表")
         
         # 快速图表生成
         with st.expander("快速生成示例图表", expanded=False):
             st.info("请在右侧分析选项标签页生成图表")
     
-    print("【调试】render_chart_preview_page 函数执行完毕")
-    print("="*50)
 
 def render_chart_export(fig):
     """图表导出功能"""
@@ -1023,6 +995,7 @@ def render_settings_page():
 # ============================================
 def main():
     """主程序入口"""
+    managers['announcement'].show_announcements()  
     # 顶部区域
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
