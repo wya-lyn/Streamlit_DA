@@ -235,30 +235,81 @@ def _promote_to_header(row_number):
 
 
 def render_quick_process():
-    """一键处理面板（7个单选按钮）"""
+    """一键处理面板（密码保护）"""
+    from utils.data_templates import PROCESSING_TEMPLATES, is_authorized, authorize, logout, get_stored_password
+    
     st.markdown("### ⚡ 一键处理模板")
+    
+    # 检查是否有密码设置
+    has_password = bool(get_stored_password())
+    
+    # 显示授权状态
+    if has_password:
+        if is_authorized():
+            st.success("🔓 已授权 - 可使用全部模板")
+        else:
+            st.info("🔒 部分模板需要密码授权")
+    
+    # 登出按钮
+    if is_authorized():
+        col1, col2 = st.columns([4, 1])
+        with col2:
+            if st.button("🔒 锁定", key="lock_templates"):
+                logout()
+                st.rerun()
+    
     st.caption("选择数据处理模板，一键执行预设操作")
     
     template_ids = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
     
-    # 显示7个模板按钮（每行4个）
+    # 显示7个模板按钮
     cols = st.columns(4)
     selected_template = None
     
     for i, tid in enumerate(template_ids):
         template = PROCESSING_TEMPLATES.get(tid, {})
         name = template.get("name", f"模板{tid}")
+        protected = template.get("protected", False)
+        
+        # 如果是受保护模板且未授权，显示锁定图标
+        if protected and not is_authorized():
+            display_name = f"🔒 {name}"
+            disabled = True
+        else:
+            display_name = f"📋 {name}"
+            disabled = False
+        
         col_idx = i % 4
         with cols[col_idx]:
-            if st.button(f"📋 {name}", key=f"template_btn_{tid}", use_container_width=True):
+            if st.button(display_name, key=f"template_btn_{tid}", use_container_width=True, disabled=disabled):
                 selected_template = tid
                 st.session_state.selected_template = tid
+    
+    # 如果需要授权但未授权，显示密码输入框
+    if selected_template:
+        template = PROCESSING_TEMPLATES.get(selected_template, {})
+        if template.get("protected", False) and not is_authorized():
+            st.warning(f"🔒 模板 '{template['name']}' 需要密码授权")
+            password = st.text_input("请输入密码", type="password", key="template_password")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("验证", key="verify_btn"):
+                    if authorize(password):
+                        st.success("授权成功！")
+                        st.rerun()
+                    else:
+                        st.error("密码错误")
+            return
     
     # 如果有选中的模板，显示详情和执行按钮
     current_tid = selected_template or st.session_state.get('selected_template')
     if current_tid:
         template = PROCESSING_TEMPLATES.get(current_tid, {})
         if template:
+            # 如果未授权且模板受保护，不显示执行按钮
+            if template.get("protected", False) and not is_authorized():
+                return
+            
             st.markdown("---")
             col1, col2, col3 = st.columns([2, 1, 1])
             

@@ -1,13 +1,45 @@
 """
 数据处理模板管理
-存储预定义的数据处理流程模板
 """
+
+import streamlit as st
+import hashlib
+
+def get_stored_password():
+    """从 secrets 获取存储的密码"""
+    try:
+        return st.secrets.get("TEMPLATE_PASSWORD", "")
+    except:
+        return ""
+
+def verify_password(input_password):
+    """验证密码"""
+    stored = get_stored_password()
+    if not stored:
+        return False
+    return input_password == stored
+
+def is_authorized():
+    """检查是否已授权"""
+    return st.session_state.get('template_authorized', False)
+
+def authorize(password):
+    """授权验证"""
+    if verify_password(password):
+        st.session_state.template_authorized = True
+        return True
+    return False
+
+def logout():
+    """登出"""
+    st.session_state.template_authorized = False
 
 # 模板定义
 PROCESSING_TEMPLATES = {
     "P1": {
         "name": "OB",
         "description": "处理订单数据：删除空列 → 提升标题 → 分列状态 → 分列选择 → 筛选",
+        "protected": True,
          "steps": [
         {"type": "删除列", "params": {"columns": ["Column1", "Column3"]}},
         {"type": "提升为标题", "params": {"row_number": 1}},
@@ -41,6 +73,7 @@ PROCESSING_TEMPLATES = {
     "P2": {
         "name": "销售报表清洗",
         "description": "清洗销售数据：提升标题 → 转换数值 → 去重",
+        "protected": True,
         "steps": [
             {"type": "提升为标题", "params": {"row_number": 3}},
             {"type": "类型转换", "params": {"column": "销售额", "target_type": "数值"}},
@@ -52,6 +85,7 @@ PROCESSING_TEMPLATES = {
     "P3": {
         "name": "用户数据清洗",
         "description": "清洗用户数据：删除空列 → 替换状态值",
+        "protected": True,
         "steps": [
             {"type": "删除空列", "params": {}},
             {"type": "替换", "params": {"column": "状态", "old": "0", "new": "无效"}},
@@ -62,6 +96,7 @@ PROCESSING_TEMPLATES = {
     "P4": {
         "name": "分列处理",
         "description": "按逗号分列",
+        "protected": True,
         "steps": [
             {"type": "分列", "params": {"column": "数据", "separator": ",", "mode": "最左分隔符"}}
         ]
@@ -70,18 +105,21 @@ PROCESSING_TEMPLATES = {
     "P5": {
         "name": "模板5",
         "description": "待配置",
+        "protected": True,
         "steps": []
     },
     
     "P6": {
         "name": "模板6",
         "description": "待配置",
+        "protected": True,
         "steps": []
     },
     
     "P7": {
         "name": "模板7",
         "description": "待配置",
+        "protected": True,
         "steps": []
     }
 }
