@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import re
 import numpy as np
-from logger import Logger
+from utils.logger import Logger
 
 class DataCleaner:
     """数据清洗处理器"""
