@@ -26,10 +26,12 @@ def _execute_step(step):
     step_type = step["type"]
     params = step.get("params", {})
     
+    # ========== 提升为标题 ==========
     if step_type == "提升为标题":
         row_number = params.get("row_number", 1)
         _promote_to_header(row_number)
-        
+    
+    # ========== 类型转换 ==========
     elif step_type == "类型转换":
         column = params.get("column")
         columns = params.get("columns", [])
@@ -38,36 +40,29 @@ def _execute_step(step):
         def clean_and_convert(val):
             """清理并转换为目标类型"""
             if target_type == "数值":
-                # 处理字符串
                 if isinstance(val, str):
                     # 移除千分位逗号
                     val = val.replace(',', '')
-                    # 移除不可见字符（控制字符、零宽空格等）
+                    # 移除不可见字符
                     val = re.sub(r'[\x00-\x1f\x7f\u200b\u200c\u200d\u2060\uFEFF]', '', val)
                     val = val.strip()
                     # 处理负数括号格式 (123.45) -> -123.45
                     if val.startswith('(') and val.endswith(')'):
                         val = '-' + val[1:-1]
-                # 转换为数值
                 try:
                     return pd.to_numeric(val, errors='coerce')
                 except:
                     return None
-                    
             elif target_type == "文本":
                 if hasattr(val, 'astype'):
                     return val.astype(str)
-                else:
-                    return str(val)
-                    
+                return str(val)
             elif target_type == "日期时间":
                 try:
                     return pd.to_datetime(val, errors='coerce')
                 except:
                     return None
-                    
             elif target_type == "百分比":
-                # 处理百分比字符串如 "12.5%"
                 if isinstance(val, str):
                     val = val.replace('%', '').strip()
                     try:
@@ -88,22 +83,58 @@ def _execute_step(step):
                 if col in st.session_state.df.columns:
                     st.session_state.df[col] = st.session_state.df[col].apply(clean_and_convert)
         
-        # 记录操作
         st.session_state.preview_manager.record_operation(f"类型转换-{target_type}")
+    
+    # ========== 自动检测类型 ==========
+    elif step_type == "自动检测类型":
+        columns = params.get("columns", [])
+        if not columns:
+            columns = st.session_state.df.columns.tolist()
         
+        for col in columns:
+            if col not in st.session_state.df.columns:
+                continue
+            
+            # 先尝试转换为数值
+            try:
+                converted = pd.to_numeric(st.session_state.df[col], errors='coerce')
+                if converted.notna().sum() > 0:
+                    st.session_state.df[col] = converted
+                    continue
+            except:
+                pass
+            
+            # 再尝试转换为日期时间
+            try:
+                converted = pd.to_datetime(st.session_state.df[col], errors='coerce')
+                if converted.notna().sum() > 0:
+                    st.session_state.df[col] = converted
+                    continue
+            except:
+                pass
+            
+            # 最后转为文本
+            st.session_state.df[col] = st.session_state.df[col].astype(str)
+        
+        st.session_state.preview_manager.record_operation("自动检测类型")
+    
+    # ========== 去重 ==========
     elif step_type == "去重":
         subset = params.get("subset", [])
         keep = params.get("keep", "first")
         execute_data_operation(st.session_state.df, st.session_state.df, "去重", subset=subset, keep=keep)
-        
+    
+    # ========== 删除空列 ==========
     elif step_type == "删除空列":
         execute_data_operation(st.session_state.df, st.session_state.df, "删除空列", [])
-        
+    
+    # ========== 删除列 ==========
     elif step_type == "删除列":
         columns = params.get("columns", [])
         if columns:
             execute_data_operation(st.session_state.df, st.session_state.df, "删除列", columns)
-        
+    
+    # ========== 替换 ==========
     elif step_type == "替换":
         column = params.get("column")
         old = params.get("old")
@@ -114,25 +145,28 @@ def _execute_step(step):
                 execute_data_operation(st.session_state.df, st.session_state.df, "文本替换", column, old, new)
             elif mode == "空值替换":
                 execute_data_operation(st.session_state.df, st.session_state.df, "空值替换", column, new)
-        
+    
+    # ========== 分列 ==========
     elif step_type == "分列":
         column = params.get("column")
         separator = params.get("separator")
         mode = params.get("mode", "最左分隔符")
         if column and separator:
             execute_data_operation(st.session_state.df, st.session_state.df, "分列", column, separator, mode)
-        
+    
+    # ========== 修改表头 ==========
     elif step_type == "修改表头":
         old_name = params.get("old_name")
         new_name = params.get("new_name")
         if old_name and new_name and old_name in st.session_state.df.columns:
             st.session_state.df = st.session_state.df.rename(columns={old_name: new_name})
-        
+    
+    # ========== 筛选 ==========
     elif step_type == "筛选":
         column = params.get("column")
         condition = params.get("condition")
         value = params.get("value")
-        if column:
+        if column and column in st.session_state.df.columns:
             if condition == "不等于":
                 st.session_state.df = st.session_state.df[st.session_state.df[column] != value]
             elif condition == "不为空":
@@ -142,7 +176,8 @@ def _execute_step(step):
             else:
                 filter_obj = DataFilter()
                 st.session_state.df = filter_obj.text_filter(st.session_state.df, column, condition, str(value))
-        
+    
+    # ========== 清理字符 ==========
     elif step_type == "清理字符":
         column = params.get("column")
         columns = params.get("columns", [])
@@ -150,19 +185,14 @@ def _execute_step(step):
         def clean_text(text):
             """清理不可见字符"""
             if isinstance(text, str):
-                # 移除控制字符（ASCII 0-31 和 127）
                 text = re.sub(r'[\x00-\x1f\x7f]', '', text)
-                # 移除零宽空格等特殊 Unicode 字符
                 text = re.sub(r'[\u200b\u200c\u200d\u2060\uFEFF]', '', text)
-                # 移除首尾空格
                 text = text.strip()
             return text
         
-        # 处理单列
         if column and column in st.session_state.df.columns:
             st.session_state.df[column] = st.session_state.df[column].apply(clean_text)
         
-        # 处理多列
         if columns:
             for col in columns:
                 if col in st.session_state.df.columns:
