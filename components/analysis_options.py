@@ -44,19 +44,285 @@ def render_analysis_options_tab():
     
     with analysis_tabs[5]:
         render_composite_pie_chart()
-
+def render_data_quality_analysis():
+    """数据质量分析（异常检测）"""
+    st.markdown("##### ⚠️ 数据质量分析")
+    st.caption("通过频度分布检测数据是否可能存在异常（如机器操作、数据倾斜等）")
+    
+    df = st.session_state.df
+    import numpy as np
+    
+    quality_stats = []
+    
+    # ========== 文本列分析 ==========
+    text_cols = df.select_dtypes(include=['object']).columns.tolist()
+    
+    for col in text_cols:
+        total = len(df[col])
+        unique = df[col].nunique()
+        missing = df[col].isna().sum()
+        missing_pct = missing / total * 100 if total > 0 else 0
+        
+        if unique > 0:
+            value_counts = df[col].value_counts(dropna=False)
+            top1_count = value_counts.iloc[0] if len(value_counts) > 0 else 0
+            top1_pct = top1_count / total * 100 if total > 0 else 0
+            
+            top3_count = value_counts.head(3).sum() if len(value_counts) >= 3 else value_counts.sum()
+            top3_pct = top3_count / total * 100 if total > 0 else 0
+            
+            unique_pct = unique / total * 100 if total > 0 else 0
+            
+            # 计算信息熵
+            probs = value_counts / total
+            entropy = -np.sum(probs * np.log2(probs + 1e-10))
+            max_entropy = np.log2(unique) if unique > 1 else 1
+            entropy_normalized = entropy / max_entropy if max_entropy > 0 else 0
+            
+            # 异常判定规则
+            anomalies = []
+            risk_level = "正常"
+            
+            if unique == 1:
+                anomalies.append("唯一值只有1个")
+                risk_level = "高风险"
+            elif unique == 0:
+                anomalies.append("无数据")
+                risk_level = "高风险"
+            elif top1_pct > 95:
+                anomalies.append(f"最频繁值占比过高 ({top1_pct:.1f}%)")
+                risk_level = "高风险"
+            elif top1_pct > 80:
+                anomalies.append(f"最频繁值占比较高 ({top1_pct:.1f}%)")
+                risk_level = "中风险"
+            elif top3_pct > 98:
+                anomalies.append(f"前3个值占比过高 ({top3_pct:.1f}%)")
+                risk_level = "中风险"
+            elif unique_pct < 5 and unique > 1:
+                anomalies.append(f"唯一值占比较低 ({unique_pct:.1f}%)")
+                risk_level = "低风险"
+            elif missing_pct > 50:
+                anomalies.append(f"缺失值过高 ({missing_pct:.1f}%)")
+                risk_level = "中风险"
+            elif missing_pct > 20:
+                anomalies.append(f"缺失值较高 ({missing_pct:.1f}%)")
+                risk_level = "低风险"
+            
+            if not anomalies:
+                anomalies.append("分布正常")
+            
+            quality_stats.append({
+                "列名": col,
+                "类型": "文本",
+                "风险等级": risk_level,
+                "唯一值数": unique,
+                "唯一值占比": f"{unique_pct:.1f}%",
+                "最频繁值": str(value_counts.index[0])[:30] if len(value_counts) > 0 else "无",
+                "最频繁值占比": f"{top1_pct:.1f}%",
+                "前3值占比": f"{top3_pct:.1f}%",
+                "缺失率": f"{missing_pct:.1f}%",
+                "信息熵": f"{entropy:.2f}",
+                "熵归一化": f"{entropy_normalized:.2f}",
+                "异常说明": "、".join(anomalies)
+            })
+        else:
+            quality_stats.append({
+                "列名": col,
+                "类型": "文本",
+                "风险等级": "高风险",
+                "唯一值数": 0,
+                "唯一值占比": "0%",
+                "最频繁值": "无",
+                "最频繁值占比": "0%",
+                "前3值占比": "0%",
+                "缺失率": f"{missing_pct:.1f}%",
+                "信息熵": "0.00",
+                "熵归一化": "0.00",
+                "异常说明": "无有效数据"
+            })
+    
+    # ========== 数值列分析 ==========
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    
+    for col in numeric_cols:
+        data = df[col].dropna()
+        total = len(df[col])
+        valid_count = len(data)
+        missing = total - valid_count
+        missing_pct = missing / total * 100 if total > 0 else 0
+        
+        if valid_count > 0:
+            # 基础统计
+            mean_val = data.mean()
+            std_val = data.std()
+            min_val = data.min()
+            max_val = data.max()
+            
+            # 异常值检测（基于 IQR）
+            q1 = data.quantile(0.25)
+            q3 = data.quantile(0.75)
+            iqr = q3 - q1
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+            outliers = data[(data < lower_bound) | (data > upper_bound)].count()
+            outlier_pct = outliers / valid_count * 100 if valid_count > 0 else 0
+            
+            # 零值占比
+            zero_count = (data == 0).sum()
+            zero_pct = zero_count / valid_count * 100 if valid_count > 0 else 0
+            
+            # 负值占比
+            negative_count = (data < 0).sum()
+            negative_pct = negative_count / valid_count * 100 if valid_count > 0 else 0
+            
+            # 重复值占比（数值完全相同）
+            duplicate_count = data.duplicated().sum()
+            duplicate_pct = duplicate_count / valid_count * 100 if valid_count > 0 else 0
+            
+            # 变异系数
+            cv = std_val / mean_val if mean_val != 0 else None
+            
+            # 异常判定规则
+            anomalies = []
+            risk_level = "正常"
+            
+            # 缺失值检查
+            if missing_pct > 50:
+                anomalies.append(f"缺失值过高 ({missing_pct:.1f}%)")
+                risk_level = "高风险"
+            elif missing_pct > 20:
+                anomalies.append(f"缺失值较高 ({missing_pct:.1f}%)")
+                risk_level = "中风险" if risk_level == "正常" else risk_level
+            
+            # 异常值检查
+            if outlier_pct > 20:
+                anomalies.append(f"异常值过高 ({outlier_pct:.1f}%)")
+                risk_level = "高风险"
+            elif outlier_pct > 10:
+                anomalies.append(f"异常值较高 ({outlier_pct:.1f}%)")
+                risk_level = "中风险" if risk_level == "正常" else risk_level
+            
+            # 零值检查
+            if zero_pct > 90:
+                anomalies.append(f"零值占比过高 ({zero_pct:.1f}%)")
+                risk_level = "高风险"
+            elif zero_pct > 50:
+                anomalies.append(f"零值占比较高 ({zero_pct:.1f}%)")
+                risk_level = "中风险" if risk_level == "正常" else risk_level
+            
+            # 负值检查（如果业务上不应该有负数）
+            if negative_pct > 10:
+                anomalies.append(f"负值占比较高 ({negative_pct:.1f}%)")
+                risk_level = "中风险" if risk_level == "正常" else risk_level
+            
+            # 重复值检查
+            if duplicate_pct > 90:
+                anomalies.append(f"重复值过高 ({duplicate_pct:.1f}%)")
+                risk_level = "高风险"
+            elif duplicate_pct > 50:
+                anomalies.append(f"重复值较高 ({duplicate_pct:.1f}%)")
+                risk_level = "中风险" if risk_level == "正常" else risk_level
+            
+            # 常数列检查
+            if std_val == 0:
+                anomalies.append("常数列（所有值相同）")
+                risk_level = "高风险"
+            
+            # 变异系数异常
+            if cv is not None and cv > 10:
+                anomalies.append(f"变异系数过高 ({cv:.2f})")
+                risk_level = "中风险" if risk_level == "正常" else risk_level
+            
+            if not anomalies:
+                anomalies.append("分布正常")
+            
+            quality_stats.append({
+                "列名": col,
+                "类型": "数值",
+                "风险等级": risk_level,
+                "有效值数": valid_count,
+                "缺失率": f"{missing_pct:.1f}%",
+                "均值": f"{mean_val:.2f}",
+                "标准差": f"{std_val:.2f}",
+                "最小值": f"{min_val:.2f}",
+                "最大值": f"{max_val:.2f}",
+                "异常值数": outliers,
+                "异常值占比": f"{outlier_pct:.1f}%",
+                "零值占比": f"{zero_pct:.1f}%",
+                "负值占比": f"{negative_pct:.1f}%",
+                "重复值占比": f"{duplicate_pct:.1f}%",
+                "变异系数": f"{cv:.2f}" if cv else "N/A",
+                "异常说明": "、".join(anomalies)
+            })
+        else:
+            quality_stats.append({
+                "列名": col,
+                "类型": "数值",
+                "风险等级": "高风险",
+                "有效值数": 0,
+                "缺失率": f"{missing_pct:.1f}%",
+                "均值": "N/A",
+                "标准差": "N/A",
+                "最小值": "N/A",
+                "最大值": "N/A",
+                "异常值数": 0,
+                "异常值占比": "0%",
+                "零值占比": "0%",
+                "负值占比": "0%",
+                "重复值占比": "0%",
+                "变异系数": "N/A",
+                "异常说明": "无有效数据"
+            })
+    
+    # 显示结果
+    quality_df = pd.DataFrame(quality_stats)
+    
+    # 风险等级着色
+    def color_risk(val):
+        if val == "高风险":
+            return 'background-color: #ffcccc'
+        elif val == "中风险":
+            return 'background-color: #fff3cd'
+        elif val == "低风险":
+            return 'background-color: #d1ecf1'
+        return ''
+    
+    st.dataframe(
+        quality_df.style.applymap(color_risk, subset=['风险等级']),
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # 风险汇总
+    high_risk = quality_df[quality_df["风险等级"] == "高风险"]
+    mid_risk = quality_df[quality_df["风险等级"] == "中风险"]
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("高风险列", len(high_risk), delta=None)
+    with col2:
+        st.metric("中风险列", len(mid_risk), delta=None)
+    with col3:
+        st.metric("正常列", len(quality_df) - len(high_risk) - len(mid_risk), delta=None)
+    
+    if len(high_risk) > 0:
+        st.warning(f"⚠️ 发现 {len(high_risk)} 个高风险列，建议检查数据质量")
+        with st.expander("查看高风险列详情"):
+            st.dataframe(high_risk[["列名", "类型", "异常说明"]], use_container_width=True, hide_index=True)
+    elif len(mid_risk) > 0:
+        st.info(f"📊 发现 {len(mid_risk)} 个中风险列，可能存在数据倾斜或异常")
+    else:
+        st.success("✅ 所有列分布正常")
+        
 
 def render_descriptive_stats_with_chart():
-    """数据概览（整合 df.info 和 df.describe）"""
+    """数据概览（增强版）"""
     st.markdown("#### 📊 数据概览")
     
     df = st.session_state.df
     
-    # ===========================================
-    # 第一部分：基本信息
-    # ===========================================
+    # ========== 基本信息 ==========
     st.markdown("##### 基本信息")
-    
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("总行数", f"{len(df):,}")
@@ -72,11 +338,8 @@ def render_descriptive_stats_with_chart():
     
     st.markdown("---")
     
-    # ===========================================
-    # 第二部分：列信息
-    # ===========================================
+    # ========== 列信息 ==========
     st.markdown("##### 列信息")
-    
     col_info = []
     for i, col in enumerate(df.columns):
         col_info.append({
@@ -87,54 +350,122 @@ def render_descriptive_stats_with_chart():
             "缺失率": f"{df[col].isna().sum() / len(df) * 100:.1f}%",
             "唯一值数": df[col].nunique()
         })
-    
     col_info_df = pd.DataFrame(col_info)
     col_info_df = col_info_df.reset_index(drop=True)
     st.dataframe(col_info_df, use_container_width=True, hide_index=True)
     
     st.markdown("---")
     
-    # ===========================================
-    # 第三部分：数值列统计摘要
-    # ===========================================
+    # ========== 数值列统计 ==========
     numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     
     if numeric_cols:
+        # 基础统计
         st.markdown("##### 数值列统计摘要")
-        
         desc_df = df[numeric_cols].describe(percentiles=[.25, .5, .75]).round(2)
         desc_df = desc_df.reset_index()
         desc_df = desc_df.rename(columns={"index": "统计指标"})
         desc_df = desc_df.reset_index(drop=True)
-        
         st.dataframe(desc_df, use_container_width=True, hide_index=True)
         
-        with st.expander("查看高级统计指标（方差/偏度/峰度）"):
+        # 高级统计（偏度、峰度、变异系数、标准误、异常值）
+        with st.expander("📈 高级统计指标（偏度/峰度/变异系数/标准误/异常值）"):
             advanced_stats = []
             for col in numeric_cols:
-                advanced_stats.append({
-                    "统计指标": "方差",
-                    col: round(df[col].var(), 2)
-                })
-                advanced_stats.append({
-                    "统计指标": "偏度",
-                    col: round(df[col].skew(), 2)
-                })
-                advanced_stats.append({
-                    "统计指标": "峰度",
-                    col: round(df[col].kurtosis(), 2)
-                })
+                data = df[col].dropna()
+                if len(data) > 0:
+                    q1 = data.quantile(0.25)
+                    q3 = data.quantile(0.75)
+                    iqr = q3 - q1
+                    cv = data.std() / data.mean() if data.mean() != 0 else None
+                    sem = data.std() / (len(data) ** 0.5)
+                    
+                    # 异常值检测（基于 IQR）
+                    lower_bound = q1 - 1.5 * iqr
+                    upper_bound = q3 + 1.5 * iqr
+                    outliers = data[(data < lower_bound) | (data > upper_bound)].count()
+                    
+                    advanced_stats.append({
+                        "列名": col,
+                        "偏度": round(data.skew(), 4),
+                        "峰度": round(data.kurtosis(), 4),
+                        "变异系数(CV)": round(cv, 4) if cv else None,
+                        "标准误(SEM)": round(sem, 4),
+                        "四分位距(IQR)": round(iqr, 2),
+                        "异常值数": outliers,
+                        "异常值占比": f"{outliers/len(data)*100:.1f}%"
+                    })
             adv_df = pd.DataFrame(advanced_stats)
-            adv_df = adv_df.reset_index(drop=True)
             st.dataframe(adv_df, use_container_width=True, hide_index=True)
+        
+        # 分段统计（等频分段）
+        with st.expander("📊 分段统计（等频分段）"):
+            st.caption("将数据按数值大小等分为5段，统计每段的数量和占比")
+            
+            segment_stats = []
+            for col in numeric_cols:
+                data = df[col].dropna()
+                if len(data) > 0:
+                    labels = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
+                    try:
+                        segments = pd.qcut(data, q=5, labels=labels, duplicates='drop')
+                        segment_counts = segments.value_counts().sort_index()
+                        bounds = pd.qcut(data, q=5, retbins=True, duplicates='drop')[1]
+                        
+                        cumulative = 0
+                        for i, label in enumerate(labels[:len(segment_counts)]):
+                            if i < len(bounds) - 1:
+                                range_str = f"[{bounds[i]:.2f}, {bounds[i+1]:.2f}]"
+                            else:
+                                range_str = f">{bounds[-2]:.2f}"
+                            
+                            count = segment_counts.get(label, 0)
+                            cumulative += count
+                            segment_stats.append({
+                                "列名": col,
+                                "分段": label,
+                                "数值范围": range_str,
+                                "数量": count,
+                                "占比": f"{count/len(data)*100:.1f}%",
+                                "累计占比": f"{cumulative/len(data)*100:.1f}%"
+                            })
+                    except Exception as e:
+                        segment_stats.append({
+                            "列名": col,
+                            "分段": "分段失败",
+                            "数值范围": str(e),
+                            "数量": 0,
+                            "占比": "0%",
+                            "累计占比": "0%"
+                        })
+            
+            if segment_stats:
+                segment_df = pd.DataFrame(segment_stats)
+                st.dataframe(segment_df, use_container_width=True, hide_index=True)
+                
+                # 可视化分段分布
+                st.markdown("##### 分段分布可视化")
+                for col in numeric_cols[:3]:
+                    col_data = segment_df[segment_df["列名"] == col]
+                    if not col_data.empty:
+                        import plotly.express as px
+                        fig = px.bar(
+                            col_data,
+                            x="分段",
+                            y="数量",
+                            title=f"{col} 分段分布",
+                            text="占比",
+                            color="分段"
+                        )
+                        fig.update_traces(textposition='outside')
+                        fig.update_layout(showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("没有数值类型的列")
     
     st.markdown("---")
     
-    # ===========================================
-    # 第四部分：文本列统计摘要
-    # ===========================================
+    # ========== 文本列统计 ==========
     text_cols = df.select_dtypes(include=['object']).columns.tolist()
     
     if text_cols:
@@ -142,12 +473,19 @@ def render_descriptive_stats_with_chart():
         
         text_stats = []
         for col in text_cols:
+            unique_count = df[col].nunique()
+            total_count = len(df[col])
+            mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else "N/A"
+            mode_count = df[col].value_counts().iloc[0] if len(df[col].value_counts()) > 0 else 0
+            
             text_stats.append({
                 "列名": col,
-                "总记录数": len(df[col]),
-                "唯一值数": df[col].nunique(),
-                "最频繁值": df[col].mode().iloc[0] if not df[col].mode().empty else "N/A",
-                "最频繁值出现次数": df[col].value_counts().iloc[0] if len(df[col].value_counts()) > 0 else 0,
+                "总记录数": total_count,
+                "唯一值数": unique_count,
+                "唯一值占比": f"{unique_count / total_count * 100:.1f}%",
+                "最频繁值": mode_val,
+                "最频繁值出现次数": mode_count,
+                "最频繁值占比": f"{mode_count / total_count * 100:.1f}%" if mode_count > 0 else "0%",
                 "缺失值": df[col].isna().sum()
             })
         
@@ -155,11 +493,29 @@ def render_descriptive_stats_with_chart():
         text_stats_df = text_stats_df.reset_index(drop=True)
         st.dataframe(text_stats_df, use_container_width=True, hide_index=True)
         
-        with st.expander("查看各列频数分布"):
+        # 文本长度统计
+        with st.expander("📏 文本长度统计"):
+            length_stats = []
+            for col in text_cols:
+                lengths = df[col].astype(str).str.len()
+                length_stats.append({
+                    "列名": col,
+                    "最小长度": int(lengths.min()),
+                    "最大长度": int(lengths.max()),
+                    "平均长度": round(lengths.mean(), 1),
+                    "中位长度": int(lengths.median()),
+                    "空字符串数": (df[col].astype(str) == "").sum()
+                })
+            length_df = pd.DataFrame(length_stats)
+            st.dataframe(length_df, use_container_width=True, hide_index=True)
+        
+        # 频数分布（前10个值）
+        with st.expander("📊 频数分布（前10个值）"):
             for col in text_cols[:3]:
                 st.markdown(f"**{col}**")
                 freq = df[col].value_counts().head(10).reset_index()
                 freq.columns = [col, "频数"]
+                freq['占比'] = (freq['频数'] / len(df[col]) * 100).round(1).astype(str) + '%'
                 freq = freq.reset_index(drop=True)
                 st.dataframe(freq, use_container_width=True, hide_index=True)
                 st.markdown("---")
@@ -169,28 +525,43 @@ def render_descriptive_stats_with_chart():
     else:
         st.info("没有文本类型的列")
     
+    # ========== 数据质量分析 ==========
     st.markdown("---")
+    render_data_quality_analysis()
     
-    # ===========================================
-    # 第五部分：数据导出
-    # ===========================================
+    # ========== 导出统计结果 ==========
     st.markdown("##### 导出统计结果")
-    
     col1, col2 = st.columns(2)
     
     with col1:
         if st.button("📥 导出完整统计报告", key="export_full_stats", use_container_width=True):
+            # 构建 Excel 报告
             with pd.ExcelWriter('data_overview.xlsx') as writer:
+                # 基本信息
                 basic_info = pd.DataFrame({
                     "指标": ["总行数", "总列数", "缺失值总数", "内存占用(MB)"],
                     "值": [len(df), len(df.columns), missing_count, f"{memory_usage:.2f}"]
                 })
                 basic_info.to_excel(writer, sheet_name='基本信息', index=False)
+                
+                # 列信息
                 col_info_df.to_excel(writer, sheet_name='列信息', index=False)
+                
+                # 数值统计
                 if numeric_cols:
                     desc_df.to_excel(writer, sheet_name='数值统计', index=False)
+                
+                # 文本统计
                 if text_cols:
                     text_stats_df.to_excel(writer, sheet_name='文本统计', index=False)
+                
+                # 高级统计
+                if 'adv_df' in locals():
+                    adv_df.to_excel(writer, sheet_name='高级统计', index=False)
+                
+                # 分段统计
+                if 'segment_df' in locals() and not segment_df.empty:
+                    segment_df.to_excel(writer, sheet_name='分段统计', index=False)
             
             with open('data_overview.xlsx', 'rb') as f:
                 st.download_button(
@@ -202,13 +573,22 @@ def render_descriptive_stats_with_chart():
                 )
     
     with col2:
-        if st.button("📥 导出为CSV", key="export_stats_csv_desc", use_container_width=True):
+        if st.button("📥 导出为CSV", key="export_stats_csv", use_container_width=True):
+            # 构建 CSV 报告
             all_stats = []
             for col in numeric_cols:
                 row = {"列名": col, "类型": "数值"}
+                # 基础统计
                 for stat in desc_df["统计指标"]:
                     if stat in df[col].describe().index:
                         row[stat] = round(df[col].describe()[stat], 2)
+                # 高级统计
+                for adv in advanced_stats:
+                    if adv["列名"] == col:
+                        row["偏度"] = adv["偏度"]
+                        row["峰度"] = adv["峰度"]
+                        row["变异系数"] = adv["变异系数(CV)"]
+                        row["异常值数"] = adv["异常值数"]
                 all_stats.append(row)
             
             for col in text_cols:
