@@ -62,7 +62,7 @@ PROCESSING_TEMPLATES = {
         {"type": "修改表头", "params": {"old_name": "状态_2", "new_name": "IP"}},
         
         {"type": "筛选", "params": {"column": "交易时间", "condition": "不等于", "value": "总和"}},
-        {"type": "筛选", "params": {"column": "注单号码", "condition": "不为空"}}
+        {"type": "筛选", "params": {"column": "注单号码", "condition": "不为空"}},
         
         {"type": "类型转换", "params": {"columns": ["承租公司輸贏/佣金", "投注额"], "target_type": "数值"}},
         {"type": "类型转换", "params": {"column": "开赛时间", "target_type": "日期时间"}},
