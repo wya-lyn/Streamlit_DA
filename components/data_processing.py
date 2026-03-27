@@ -282,14 +282,23 @@ def render_quick_process():
     if current_tid:
         template = PROCESSING_TEMPLATES.get(current_tid, {})
         if template:
-            # 如果需要密码且未授权，显示密码输入框（此时才显示）
+             # 如果需要密码且未授权，显示密码输入框
             if template.get("protected", False) and not is_authorized():
                 st.markdown("---")
                 st.warning(f"🔒 模板 '{template['name']}' 需要密码授权")
+                
+                # ===== 调试信息 =====
+                from utils.data_templates import get_stored_password
+                stored_pwd = get_stored_password()
+                st.info(f"【调试】系统密码长度: {len(stored_pwd)} (输入密码后点击验证)")
+                # ===== 调试结束 =====
+                
                 password = st.text_input("请输入密码", type="password", key="template_password")
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("验证", key="verify_btn"):
+                        # 显示输入密码长度用于调试
+                        st.write(f"【调试】输入密码长度: {len(password)}")
                         if authorize(password):
                             st.success("授权成功！")
                             st.rerun()

@@ -7,10 +7,16 @@ import streamlit as st
 def get_stored_password():
     """从 secrets 获取存储的密码"""
     try:
-        # 确保返回字符串类型
         password = st.secrets.get("TEMPLATE_PASSWORD", "")
+        # 调试：显示密码信息（部署后删除）
+        st.write(f"【调试】从 Secrets 读取的密码长度: {len(password)}")
+        if password:
+            st.write(f"【调试】密码前3位: {password[:3]}...")
+        else:
+            st.write("【调试】Secrets 中没有 TEMPLATE_PASSWORD")
         return str(password).strip() if password else ""
-    except:
+    except Exception as e:
+        st.write(f"【调试】读取 Secrets 失败: {e}")
         return ""
 
 def verify_password(input_password):
