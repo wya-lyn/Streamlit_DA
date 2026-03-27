@@ -9,6 +9,10 @@ from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from utils.stats_analyzer import StatsAnalyzer
+from utils.chart_generator import ChartGenerator
+from components.group_stats_chart import GroupStatsChart
+from utils.depth_analysis import DepthAnalysisEngine
 
 
 def render_analysis_options_tab():
@@ -50,7 +54,7 @@ def render_data_quality_analysis():
     st.caption("通过频度分布检测数据是否可能存在异常（如机器操作、数据倾斜等）")
     
     df = st.session_state.df
-    import numpy as np
+    
     
     quality_stats = []
     
@@ -490,7 +494,7 @@ def render_descriptive_stats_with_chart():
                 for col in numeric_cols[:3]:
                     col_data = segment_df[segment_df["列名"] == col]
                     if not col_data.empty:
-                        import plotly.express as px
+                        
                         fig = px.bar(
                             col_data,
                             x="分段",
@@ -726,7 +730,7 @@ def render_correlation_with_heatmap():
         if st.button("📊 生成相关性矩阵", key="btn_corr_matrix", use_container_width=True):
             with st.spinner("正在计算相关性..."):
                 try:
-                    from utils.stats_analyzer import StatsAnalyzer
+                    
                     analyzer = StatsAnalyzer()
                     
                     corr_df = analyzer.correlation_analysis(
@@ -750,7 +754,7 @@ def render_correlation_with_heatmap():
         if st.button("🔥 生成热力图", key="btn_corr_heatmap", use_container_width=True):
             with st.spinner("正在生成热力图..."):
                 try:
-                    from utils.chart_generator import ChartGenerator
+                    
                     
                     corr_df = st.session_state.df[selected_cols].corr(method=method)
                     
@@ -778,7 +782,7 @@ def render_group_stats_with_chart():
     """分组统计 + 聚合图表"""
     st.markdown("#### 分组统计")
     
-    from components.group_stats_chart import GroupStatsChart
+    
     
     category_cols = st.session_state.df.select_dtypes(include=['object']).columns.tolist()
     numeric_cols = st.session_state.df.select_dtypes(include=['int64', 'float64']).columns.tolist()
@@ -957,7 +961,7 @@ def render_time_series_with_chart():
         if st.button("📊 时间序列表", key="btn_ts_table", use_container_width=True):
             with st.spinner("正在分析..."):
                 try:
-                    from utils.stats_analyzer import StatsAnalyzer
+                    
                     analyzer = StatsAnalyzer()
                     
                     ts_df = analyzer.time_series_analysis(
@@ -977,7 +981,7 @@ def render_time_series_with_chart():
         if st.button("📈 生成趋势图", key="btn_ts_chart", use_container_width=True):
             with st.spinner("正在生成图表..."):
                 try:
-                    from utils.chart_generator import ChartGenerator
+                    
                     
                     # 准备时间序列数据
                     ts_data = st.session_state.df[[date_col, value_col]].copy()
@@ -1105,7 +1109,7 @@ def render_pivot_with_chart():
             if chart_type != "请选择图表类型" and st.button("📈 生成透视图", key="btn_pivot_chart", use_container_width=True):
                 with st.spinner("正在生成图表..."):
                     try:
-                        from utils.chart_generator import ChartGenerator
+                        
                         
                         pivot_data = pd.pivot_table(
                             df,
@@ -1250,7 +1254,7 @@ def render_composite_pie_chart():
     
     if use_depth_engine:
         # 使用深度分析引擎（支持下钻）
-        from utils.depth_analysis import DepthAnalysisEngine
+        
         
         engine = DepthAnalysisEngine()
         config = {
@@ -1267,7 +1271,7 @@ def render_composite_pie_chart():
         )
     else:
         # 原有的复合饼图逻辑（子图布局、复合定位、玫瑰图）
-        from utils.chart_generator import ChartGenerator
+        
         
         fig = ChartGenerator.create_chart(
             df=st.session_state.df,

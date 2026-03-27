@@ -221,3 +221,21 @@ class DataCleaner:
             Logger.error(f"删除列失败: {str(e)}")
             st.error(f"删除列失败: {str(e)}")
             return df
+    @staticmethod
+    def is_empty_column(series):
+        """判断列是否全为空值"""
+        # 检查 NaN/None
+        if series.isna().all():
+            return True
+        # 只对 object 类型检查字符串空值
+        if series.dtype == 'object':
+            # 检查是否全部为空字符串
+            if (series == '').all():
+                return True
+            # 检查是否全部为字符串 "null"
+            if (series == 'null').all():
+                return True
+            # 检查是否全部为字符串 "None"
+            if (series == 'None').all():
+                return True
+        return False

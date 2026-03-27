@@ -6,11 +6,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
-
+import re
+from utils.data_filter import DataFilter
 from utils.data_cleaner import DataCleaner
 from utils.logger import Logger
-from utils.data_filter import DataFilter
-from utils.data_templates import PROCESSING_TEMPLATES  # 添加这行
+from components.history_manager import HistoryManager
+from utils.data_templates import PROCESSING_TEMPLATES, is_authorized, authorize, logout,get_stored_password
 
 
 # ============================================
@@ -19,10 +20,7 @@ from utils.data_templates import PROCESSING_TEMPLATES  # 添加这行
 
 def _execute_step(step):
     """执行单个处理步骤"""
-    import re
-    import pandas as pd
-    from utils.data_filter import DataFilter
-    
+
     step_type = step["type"]
     params = step.get("params", {})
     
@@ -35,7 +33,6 @@ def _execute_step(step):
         pattern = params.get("pattern", "")
         replacement = params.get("replacement", "")
         if pattern:
-            import re
             new_columns = [re.sub(pattern, replacement, str(col)) for col in st.session_state.df.columns]
             st.session_state.df.columns = new_columns
             st.session_state.preview_manager.record_operation("清理表头")
@@ -135,11 +132,19 @@ def _execute_step(step):
     
     # ========== 删除空列 ==========
     elif step_type == "删除空列":
-        execute_data_operation(st.session_state.df, st.session_state.df, "删除空列", [])
+        
+        cleaner = DataCleaner()
+        empty_cols = []
+        for col in st.session_state.df.columns:
+            if cleaner.is_empty_column(st.session_state.df[col]):
+                empty_cols.append(col)
+        if empty_cols:
+            st.session_state.df = cleaner.delete_columns(st.session_state.df, empty_cols)
     
     # ========== 删除列 ==========
     elif step_type == "删除列":
         columns = params.get("columns", [])
+        print(columns)
         if columns:
             execute_data_operation(st.session_state.df, st.session_state.df, "删除列", columns)
     
@@ -245,7 +250,7 @@ def _promote_to_header(row_number):
 
 def render_quick_process():
     """一键处理面板（密码保护）"""
-    from utils.data_templates import PROCESSING_TEMPLATES, is_authorized, authorize, logout
+
     
     st.markdown("### ⚡ 一键处理模板")
     
@@ -297,7 +302,7 @@ def render_quick_process():
                 st.warning(f"🔒 模板 '{template['name']}' 需要密码授权")
                 
                 # ===== 调试信息 =====
-                from utils.data_templates import get_stored_password
+
                 stored_pwd = get_stored_password()
                 st.info(f"【调试】系统密码长度: {len(stored_pwd)} (输入密码后点击验证)")
                 # ===== 调试结束 =====
@@ -828,7 +833,6 @@ def render_rename_columns_section():
                         col_str = f"列_{col_str}"
                     
                     # 4. 处理非法字符（只允许中文、字母、数字、下划线）
-                    import re
                     col_str = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9_]', '_', col_str)
                     
                     # 5. 去除首尾下划线
@@ -884,7 +888,19 @@ def render_delete_columns_section():
     # 检测空列
     empty_columns = []
     for col in all_columns:
-        if st.session_state.df[col].isna().all() or (st.session_state.df[col] == "").all():
+        col_data = st.session_state.df[col]
+        
+        # 条件1: 全部为 NaN/None
+        if col_data.isna().all():
+            empty_columns.append(col)
+        # 条件2: 全部为空字符串
+        elif col_data.dtype == 'object' and (col_data == '').all():
+            empty_columns.append(col)
+        # 条件3: 全部为字符串 "null"
+        elif col_data.dtype == 'object' and (col_data == 'null').all():
+            empty_columns.append(col)
+        # 条件4: 全部为字符串 "None"
+        elif col_data.dtype == 'object' and (col_data == 'None').all():
             empty_columns.append(col)
     
     # 显示空列检测结果
@@ -1091,10 +1107,23 @@ def execute_data_operation(df, original_df, operation_name, *args, **kwargs):
             result_df = cleaner.split_column(df, *args, **kwargs)
         elif operation_name == "合并列":
             result_df = cleaner.merge_columns(df, *args, **kwargs)
-        elif operation_name == "删除列" or operation_name == "删除空列":
-            # 确保 args[0] 是列名列表
+        elif operation_name == "删除空列":
+            # 检测所有空列
+            empty_cols = []
+            for col in st.session_state.df.columns:
+                if DataCleaner.is_empty_column(st.session_state.df[col]):
+                    empty_cols.append(col)
+            if empty_cols:
+                result_df = cleaner.delete_columns(df, empty_cols)
+            else:
+                result_df = df
+        elif operation_name == "删除列":  # 【新增】
+            # args[0] 是要删除的列名列表
             cols_to_delete = args[0] if args else []
-            result_df = cleaner.delete_columns(df, cols_to_delete)
+            if cols_to_delete:
+                result_df = cleaner.delete_columns(df, cols_to_delete)
+            else:
+                result_df = df
         
         # 重置索引
         result_df = result_df.reset_index(drop=True)
@@ -1114,14 +1143,12 @@ def execute_data_operation(df, original_df, operation_name, *args, **kwargs):
 
 def execute_split_preview(df, column, separator, mode):
     """预览分列效果"""
-    from utils.data_cleaner import DataCleaner
     cleaner = DataCleaner()
     return cleaner.split_column(df, column, separator, mode)
 
 
 def execute_merge_preview(df, columns, new_col_name, separator):
     """预览合并效果"""
-    from utils.data_cleaner import DataCleaner
     cleaner = DataCleaner()
     return cleaner.merge_columns(df, columns, new_col_name, separator)
 
@@ -1129,7 +1156,7 @@ def execute_merge_preview(df, columns, new_col_name, separator):
 def undo_last_operation():
     """全局撤销操作"""
     if st.session_state.df is not None:
-        from components.history_manager import HistoryManager
+        
         history = HistoryManager()
         st.session_state.df = history.undo(st.session_state.df)
         st.session_state.preview_manager.record_operation("撤销")
@@ -1139,7 +1166,6 @@ def undo_last_operation():
 def redo_last_operation():
     """全局重做操作"""
     if st.session_state.df is not None:
-        from components.history_manager import HistoryManager
         history = HistoryManager()
         st.session_state.df = history.redo(st.session_state.df)
         st.session_state.preview_manager.record_operation("重做")
@@ -1148,7 +1174,6 @@ def redo_last_operation():
 
 def show_global_history():
     """显示全局历史"""
-    from components.history_manager import HistoryManager
     history = HistoryManager()
     history.show_history()
 
@@ -1203,7 +1228,6 @@ def show_filter_history():
 def preview_unified_filter(column, condition, value):
     """预览统一筛选结果"""
     try:
-        from utils.data_filter import DataFilter
         filter_obj = DataFilter()
         
         preview_df = st.session_state.df.head(20).copy()
@@ -1231,7 +1255,6 @@ def preview_unified_filter(column, condition, value):
 def apply_unified_filter(column, condition, value):
     """应用统一筛选"""
     try:
-        from utils.data_filter import DataFilter
         filter_obj = DataFilter()
         
         if 'filter_history' not in st.session_state:

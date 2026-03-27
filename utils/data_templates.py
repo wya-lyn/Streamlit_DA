@@ -95,15 +95,25 @@ PROCESSING_TEMPLATES = {
     },
     
     "P3": {
-        "name": "用户数据清洗",
-        "description": "清洗用户数据：删除空列 → 替换状态值",
-        "protected": True,
-        "steps": [
-            {"type": "删除空列", "params": {}},
-            {"type": "替换", "params": {"column": "状态", "old": "0", "new": "无效"}},
-            {"type": "替换", "params": {"column": "等级", "old": "null", "new": "普通"}}
-        ]
-    },
+    "name": "IMES",
+    "description": "清洗用户数据：删除空列 → 删除无用列",
+    "protected": True,
+    "steps": [
+        {"type": "删除空列", "params": {}},
+        {"type": "删除列", "params": {"columns": [
+            "companyId", "companyName", "betNo", "currencyCode", "rmbResultDaily", "result",
+            "maxBetLimit", "maxBetPercentage", "leagueProfileCode", "enableCheckBox", "isPending",
+            "isVVIPmember", "oddsBoostValue", "riskID", "minAcceptanceOdds", "maxAcceptanceOdds",
+            "acceptableMidLine", "rmbCashOutAmount", "rmbCashOutWinLoss", "memberProfileSportBaseTierDescription",
+            "memberGroupName", "memberGroupColor", "globalMemberGroupColor", "marketName.ENG", "marketName.TH",
+            "stakeTypeId", "duration", "matchNo", "sportId", "externalMatchId", "baseTierNameForDesc",
+            "tierNameForDesc", "league.ENG", "league.TH", "homeTeam.ENG", "homeTeam.TH", "awayTeam.ENG",
+            "awayTeam.TH", "selection.ENG", "selection.TH", "handicap.0", "handicapDescription",
+            "betHomeScore", "betAwayScore", "matchResults.0", "onHoldSettlement", "memberBetConfirm","rmbActualBetAmount","rmbResult","baseTierId","baseTierNameForGroupColor","memberGroupId"]
+                                    }
+         }
+            ]
+},
     
     "P4": {
         "name": "分列处理",

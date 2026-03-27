@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from utils.logger import Logger
 import time
 
 # 导入自定义模块
@@ -15,10 +16,8 @@ from utils.file_loader import FileLoader
 from utils.data_cleaner import DataCleaner
 from utils.data_filter import DataFilter
 from utils.stats_analyzer import StatsAnalyzer
-from utils.chart_generator import ChartGenerator
 from utils.ai_analyzer import AIAnalyzer
 from utils.preview_manager import PreviewManager
-from utils.logger import Logger
 from components.layout import LayoutManager
 from components.announcements import AnnouncementManager
 from components.footer import FooterManager
@@ -994,7 +993,7 @@ def render_settings_page():
     # 调试信息
     st.markdown("### 调试信息")
     if st.button("📋 显示调试日志", key="show_logs"):
-        from utils.logger import Logger
+        
         Logger.show_logs()
 
 # ============================================

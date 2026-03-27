@@ -5,6 +5,8 @@
 import streamlit as st
 import pandas as pd
 import json
+import io
+            
 
 
 class FileLoader:
@@ -56,10 +58,7 @@ class FileLoader:
     def _load_excel(file):
         """加载Excel文件（支持多工作表选择）"""
         try:
-            import pandas as pd
-            import streamlit as st
-            import io
-            
+
             # 读取文件内容到内存
             file_content = file.read()
             

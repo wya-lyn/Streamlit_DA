@@ -400,7 +400,7 @@ class CompositePieChart(BaseChart):
     
     def _drilldown_layout(self, df, level_cols, value_col, config):
         """交互下钻模式 - 左右布局"""
-        import plotly.graph_objects as go
+        
         
         # 获取主题颜色
         theme_mode = st.session_state.theme_mode
@@ -646,7 +646,7 @@ class CompositePieChart(BaseChart):
     
     def _create_value_chart(self, df, value_col, path, level_cols, config):
         """最终层：显示数值分布柱状图"""
-        import plotly.graph_objects as go
+        
         
         # 获取主题颜色
         theme_mode = st.session_state.theme_mode
