@@ -67,7 +67,8 @@ PROCESSING_TEMPLATES = {
         {"type": "筛选", "params": {"column": "注单号码", "condition": "不为空"}},
         {"type": "类型转换", "params": {"columns": ["承租公司輸贏/佣金", "投注额"], "target_type": "数值"}},
         {"type": "类型转换", "params": {"column": "开赛时间", "target_type": "日期时间"}},
-        {"type": "类型转换", "params": {"column": "交易时间", "target_type": "日期时间"}}
+        {"type": "类型转换", "params": {"column": "交易时间", "target_type": "日期时间"}},
+        {"type": "删除列", "params": {"columns": ["选择", "选择_1", "选择_1_1", "选择_1_1_1"]}}
     ]
     },
     
