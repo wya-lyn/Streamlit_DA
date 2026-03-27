@@ -3,21 +3,14 @@
 """
 
 import streamlit as st
-import hashlib
-
 
 def get_stored_password():
     """从 secrets 获取存储的密码"""
     try:
+        # 确保返回字符串类型
         password = st.secrets.get("TEMPLATE_PASSWORD", "")
-        # 调试：显示密码是否存在（不显示实际密码）
-        if password:
-            st.write("【调试】Secrets 中有密码配置")  # 测试用，部署后删除
-        else:
-            st.write("【调试】Secrets 中没有密码配置")  # 测试用，部署后删除
         return str(password).strip() if password else ""
-    except Exception as e:
-        st.write(f"【调试】读取 Secrets 失败: {e}")  # 测试用，部署后删除
+    except:
         return ""
 
 def verify_password(input_password):
@@ -25,7 +18,7 @@ def verify_password(input_password):
     stored = get_stored_password()
     if not stored:
         return False
-    return input_password == stored
+    return str(input_password).strip() == stored
 
 def is_authorized():
     """检查是否已授权"""
