@@ -9,8 +9,11 @@ import hashlib
 def get_stored_password():
     """从 secrets 获取存储的密码"""
     try:
-        return st.secrets.get("TEMPLATE_PASSWORD", "")
+        password = st.secrets.get("TEMPLATE_PASSWORD", "")
+        print(f"【调试】从 secrets 读取到密码: {'有' if password else '无'}")
+        return password
     except:
+        print("【调试】无法读取 secrets")
         return ""
 
 def verify_password(input_password):
@@ -44,15 +47,12 @@ PROCESSING_TEMPLATES = {
          "steps": [
         {"type": "删除列", "params": {"columns": ["Column1", "Column3"]}},
         {"type": "提升为标题", "params": {"row_number": 1}},
-        
         {"type": "分列", "params": {"column": "状态", "separator": "\n", "mode": "最左分隔符"}},
         {"type": "删除列", "params": {"columns": ["输赢/佣金", "状态.3", "状态.4"]}},
-        
         {"type": "分列", "params": {"column": "选择", "separator": "\n", "mode": "最右分隔符"}},
         {"type": "分列", "params": {"column": "选择_1", "separator": "\n", "mode": "最右分隔符"}},
         {"type": "分列", "params": {"column": "选择_1_1", "separator": "\n", "mode": "最右分隔符"}},
         {"type": "分列", "params": {"column": "选择_1_1_1", "separator": "\n", "mode": "最右分隔符"}},
-        
         {"type": "修改表头", "params": {"old_name": "选择_1_1_1_1", "new_name": "下注项"}},
         {"type": "修改表头", "params": {"old_name": "选择_1_1_1_2", "new_name": "玩法"}},
         {"type": "修改表头", "params": {"old_name": "选择_1_1_2", "new_name": "对阵"}},
@@ -60,10 +60,8 @@ PROCESSING_TEMPLATES = {
         {"type": "修改表头", "params": {"old_name": "选择_2", "new_name": "开赛时间"}},
         {"type": "修改表头", "params": {"old_name": "状态_1", "new_name": "输赢状态"}},
         {"type": "修改表头", "params": {"old_name": "状态_2", "new_name": "IP"}},
-        
         {"type": "筛选", "params": {"column": "交易时间", "condition": "不等于", "value": "总和"}},
         {"type": "筛选", "params": {"column": "注单号码", "condition": "不为空"}},
-        
         {"type": "类型转换", "params": {"columns": ["承租公司輸贏/佣金", "投注额"], "target_type": "数值"}},
         {"type": "类型转换", "params": {"column": "开赛时间", "target_type": "日期时间"}},
         {"type": "类型转换", "params": {"column": "交易时间", "target_type": "日期时间"}}

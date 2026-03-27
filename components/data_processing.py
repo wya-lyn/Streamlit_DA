@@ -240,15 +240,21 @@ def render_quick_process():
     
     st.markdown("### ⚡ 一键处理模板")
     
-    # 检查是否有密码设置
-    has_password = bool(get_stored_password())
-    
-    # 显示授权状态
-    if has_password:
-        if is_authorized():
-            st.success("🔓 已授权 - 可使用全部模板")
-        else:
-            st.info("🔒 部分模板需要密码授权")
+    # ===== 密码验证区域（始终显示）=====
+    if not is_authorized():
+        st.warning("🔒 高级模板需要密码授权")
+        password = st.text_input("请输入密码", type="password", key="master_password")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("验证", key="verify_master"):
+                if authorize(password):
+                    st.success("授权成功！")
+                    st.rerun()
+                else:
+                    st.error("密码错误")
+        with col2:
+            st.write("")
+        st.markdown("---")
     
     # 登出按钮
     if is_authorized():
