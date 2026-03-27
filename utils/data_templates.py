@@ -10,10 +10,14 @@ def get_stored_password():
     """从 secrets 获取存储的密码"""
     try:
         password = st.secrets.get("TEMPLATE_PASSWORD", "")
-        print(f"【调试】从 secrets 读取到密码: {'有' if password else '无'}")
-        return password
-    except:
-        print("【调试】无法读取 secrets")
+        # 调试：显示密码是否存在（不显示实际密码）
+        if password:
+            st.write("【调试】Secrets 中有密码配置")  # 测试用，部署后删除
+        else:
+            st.write("【调试】Secrets 中没有密码配置")  # 测试用，部署后删除
+        return str(password).strip() if password else ""
+    except Exception as e:
+        st.write(f"【调试】读取 Secrets 失败: {e}")  # 测试用，部署后删除
         return ""
 
 def verify_password(input_password):

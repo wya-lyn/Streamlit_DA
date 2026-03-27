@@ -238,6 +238,15 @@ def render_quick_process():
     """一键处理面板（密码保护）"""
     from utils.data_templates import PROCESSING_TEMPLATES, is_authorized, authorize, logout, get_stored_password
     
+    # ===== 调试信息（测试用，部署后删除）=====
+    with st.expander("🔧 调试信息"):
+        stored = get_stored_password()
+        st.write(f"Secrets 中是否有密码: {'有' if stored else '无'}")
+        if stored:
+            st.write(f"密码长度: {len(stored)}")
+        st.write(f"当前授权状态: {is_authorized()}")
+    # ===== 调试结束 =====
+    
     st.markdown("### ⚡ 一键处理模板")
     
     # ===== 密码验证区域（始终显示）=====
