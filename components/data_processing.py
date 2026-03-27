@@ -30,6 +30,15 @@ def _execute_step(step):
     if step_type == "提升为标题":
         row_number = params.get("row_number", 1)
         _promote_to_header(row_number)
+    # ========== 清理表头 ==========    
+    elif step_type == "清理表头":
+        pattern = params.get("pattern", "")
+        replacement = params.get("replacement", "")
+        if pattern:
+            import re
+            new_columns = [re.sub(pattern, replacement, str(col)) for col in st.session_state.df.columns]
+            st.session_state.df.columns = new_columns
+            st.session_state.preview_manager.record_operation("清理表头")
     
     # ========== 类型转换 ==========
     elif step_type == "类型转换":

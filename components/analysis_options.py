@@ -56,12 +56,29 @@ def render_data_quality_analysis():
     
     # ========== 文本列分析 ==========
     text_cols = df.select_dtypes(include=['object']).columns.tolist()
-    
+
     for col in text_cols:
         total = len(df[col])
         unique = df[col].nunique()
         missing = df[col].isna().sum()
         missing_pct = missing / total * 100 if total > 0 else 0
+        
+        if total == 0:
+            quality_stats.append({
+                "列名": col,
+                "类型": "文本",
+                "风险等级": "高风险",
+                "唯一值数": 0,
+                "唯一值占比": "0%",
+                "最频繁值": "无",
+                "最频繁值占比": "0%",
+                "前3值占比": "0%",
+                "缺失率": "100%",
+                "信息熵": "0.00",
+                "熵归一化": "0.00",
+                "异常说明": "无数据"
+            })
+            continue
         
         if unique > 0:
             value_counts = df[col].value_counts(dropna=False)
@@ -143,118 +160,38 @@ def render_data_quality_analysis():
     
     # ========== 数值列分析 ==========
     numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    
+
     for col in numeric_cols:
-        data = df[col].dropna()
         total = len(df[col])
+        data = df[col].dropna()
         valid_count = len(data)
         missing = total - valid_count
         missing_pct = missing / total * 100 if total > 0 else 0
         
-        if valid_count > 0:
-            # 基础统计
-            mean_val = data.mean()
-            std_val = data.std()
-            min_val = data.min()
-            max_val = data.max()
-            
-            # 异常值检测（基于 IQR）
-            q1 = data.quantile(0.25)
-            q3 = data.quantile(0.75)
-            iqr = q3 - q1
-            lower_bound = q1 - 1.5 * iqr
-            upper_bound = q3 + 1.5 * iqr
-            outliers = data[(data < lower_bound) | (data > upper_bound)].count()
-            outlier_pct = outliers / valid_count * 100 if valid_count > 0 else 0
-            
-            # 零值占比
-            zero_count = (data == 0).sum()
-            zero_pct = zero_count / valid_count * 100 if valid_count > 0 else 0
-            
-            # 负值占比
-            negative_count = (data < 0).sum()
-            negative_pct = negative_count / valid_count * 100 if valid_count > 0 else 0
-            
-            # 重复值占比（数值完全相同）
-            duplicate_count = data.duplicated().sum()
-            duplicate_pct = duplicate_count / valid_count * 100 if valid_count > 0 else 0
-            
-            # 变异系数
-            cv = std_val / mean_val if mean_val != 0 else None
-            
-            # 异常判定规则
-            anomalies = []
-            risk_level = "正常"
-            
-            # 缺失值检查
-            if missing_pct > 50:
-                anomalies.append(f"缺失值过高 ({missing_pct:.1f}%)")
-                risk_level = "高风险"
-            elif missing_pct > 20:
-                anomalies.append(f"缺失值较高 ({missing_pct:.1f}%)")
-                risk_level = "中风险" if risk_level == "正常" else risk_level
-            
-            # 异常值检查
-            if outlier_pct > 20:
-                anomalies.append(f"异常值过高 ({outlier_pct:.1f}%)")
-                risk_level = "高风险"
-            elif outlier_pct > 10:
-                anomalies.append(f"异常值较高 ({outlier_pct:.1f}%)")
-                risk_level = "中风险" if risk_level == "正常" else risk_level
-            
-            # 零值检查
-            if zero_pct > 90:
-                anomalies.append(f"零值占比过高 ({zero_pct:.1f}%)")
-                risk_level = "高风险"
-            elif zero_pct > 50:
-                anomalies.append(f"零值占比较高 ({zero_pct:.1f}%)")
-                risk_level = "中风险" if risk_level == "正常" else risk_level
-            
-            # 负值检查（如果业务上不应该有负数）
-            if negative_pct > 10:
-                anomalies.append(f"负值占比较高 ({negative_pct:.1f}%)")
-                risk_level = "中风险" if risk_level == "正常" else risk_level
-            
-            # 重复值检查
-            if duplicate_pct > 90:
-                anomalies.append(f"重复值过高 ({duplicate_pct:.1f}%)")
-                risk_level = "高风险"
-            elif duplicate_pct > 50:
-                anomalies.append(f"重复值较高 ({duplicate_pct:.1f}%)")
-                risk_level = "中风险" if risk_level == "正常" else risk_level
-            
-            # 常数列检查
-            if std_val == 0:
-                anomalies.append("常数列（所有值相同）")
-                risk_level = "高风险"
-            
-            # 变异系数异常
-            if cv is not None and cv > 10:
-                anomalies.append(f"变异系数过高 ({cv:.2f})")
-                risk_level = "中风险" if risk_level == "正常" else risk_level
-            
-            if not anomalies:
-                anomalies.append("分布正常")
-            
+        # 处理空数据列
+        if total == 0:
             quality_stats.append({
                 "列名": col,
                 "类型": "数值",
-                "风险等级": risk_level,
-                "有效值数": valid_count,
-                "缺失率": f"{missing_pct:.1f}%",
-                "均值": f"{mean_val:.2f}",
-                "标准差": f"{std_val:.2f}",
-                "最小值": f"{min_val:.2f}",
-                "最大值": f"{max_val:.2f}",
-                "异常值数": outliers,
-                "异常值占比": f"{outlier_pct:.1f}%",
-                "零值占比": f"{zero_pct:.1f}%",
-                "负值占比": f"{negative_pct:.1f}%",
-                "重复值占比": f"{duplicate_pct:.1f}%",
-                "变异系数": f"{cv:.2f}" if cv else "N/A",
-                "异常说明": "、".join(anomalies)
+                "风险等级": "高风险",
+                "有效值数": 0,
+                "缺失率": "100%",
+                "均值": "N/A",
+                "标准差": "N/A",
+                "最小值": "N/A",
+                "最大值": "N/A",
+                "异常值数": 0,
+                "异常值占比": "0%",
+                "零值占比": "0%",
+                "负值占比": "0%",
+                "重复值占比": "0%",
+                "变异系数": "N/A",
+                "异常说明": "无数据"
             })
-        else:
+            continue
+        
+        # 处理有数据但全是缺失值的情况
+        if valid_count == 0:
             quality_stats.append({
                 "列名": col,
                 "类型": "数值",
@@ -271,8 +208,113 @@ def render_data_quality_analysis():
                 "负值占比": "0%",
                 "重复值占比": "0%",
                 "变异系数": "N/A",
-                "异常说明": "无有效数据"
+                "异常说明": "全为缺失值"
             })
+            continue
+        
+        # 有有效数据时进行统计分析
+        # 基础统计
+        mean_val = data.mean()
+        std_val = data.std()
+        min_val = data.min()
+        max_val = data.max()
+        
+        # 异常值检测（基于 IQR）
+        q1 = data.quantile(0.25)
+        q3 = data.quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        outliers = data[(data < lower_bound) | (data > upper_bound)].count()
+        outlier_pct = outliers / valid_count * 100
+        
+        # 零值占比
+        zero_count = (data == 0).sum()
+        zero_pct = zero_count / valid_count * 100
+        
+        # 负值占比
+        negative_count = (data < 0).sum()
+        negative_pct = negative_count / valid_count * 100
+        
+        # 重复值占比（数值完全相同）
+        duplicate_count = data.duplicated().sum()
+        duplicate_pct = duplicate_count / valid_count * 100
+        
+        # 变异系数
+        cv = std_val / mean_val if mean_val != 0 else None
+        
+        # 异常判定规则
+        anomalies = []
+        risk_level = "正常"
+        
+        # 缺失值检查
+        if missing_pct > 50:
+            anomalies.append(f"缺失值过高 ({missing_pct:.1f}%)")
+            risk_level = "高风险"
+        elif missing_pct > 20:
+            anomalies.append(f"缺失值较高 ({missing_pct:.1f}%)")
+            risk_level = "中风险" if risk_level == "正常" else risk_level
+        
+        # 异常值检查
+        if outlier_pct > 20:
+            anomalies.append(f"异常值过高 ({outlier_pct:.1f}%)")
+            risk_level = "高风险"
+        elif outlier_pct > 10:
+            anomalies.append(f"异常值较高 ({outlier_pct:.1f}%)")
+            risk_level = "中风险" if risk_level == "正常" else risk_level
+        
+        # 零值检查
+        if zero_pct > 90:
+            anomalies.append(f"零值占比过高 ({zero_pct:.1f}%)")
+            risk_level = "高风险"
+        elif zero_pct > 50:
+            anomalies.append(f"零值占比较高 ({zero_pct:.1f}%)")
+            risk_level = "中风险" if risk_level == "正常" else risk_level
+        
+        # 负值检查（如果业务上不应该有负数）
+        if negative_pct > 10:
+            anomalies.append(f"负值占比较高 ({negative_pct:.1f}%)")
+            risk_level = "中风险" if risk_level == "正常" else risk_level
+        
+        # 重复值检查
+        if duplicate_pct > 90:
+            anomalies.append(f"重复值过高 ({duplicate_pct:.1f}%)")
+            risk_level = "高风险"
+        elif duplicate_pct > 50:
+            anomalies.append(f"重复值较高 ({duplicate_pct:.1f}%)")
+            risk_level = "中风险" if risk_level == "正常" else risk_level
+        
+        # 常数列检查
+        if std_val == 0:
+            anomalies.append("常数列（所有值相同）")
+            risk_level = "高风险"
+        
+        # 变异系数异常
+        if cv is not None and cv > 10:
+            anomalies.append(f"变异系数过高 ({cv:.2f})")
+            risk_level = "中风险" if risk_level == "正常" else risk_level
+        
+        if not anomalies:
+            anomalies.append("分布正常")
+        
+        quality_stats.append({
+            "列名": col,
+            "类型": "数值",
+            "风险等级": risk_level,
+            "有效值数": valid_count,
+            "缺失率": f"{missing_pct:.1f}%",
+            "均值": f"{mean_val:.2f}",
+            "标准差": f"{std_val:.2f}",
+            "最小值": f"{min_val:.2f}",
+            "最大值": f"{max_val:.2f}",
+            "异常值数": outliers,
+            "异常值占比": f"{outlier_pct:.1f}%",
+            "零值占比": f"{zero_pct:.1f}%",
+            "负值占比": f"{negative_pct:.1f}%",
+            "重复值占比": f"{duplicate_pct:.1f}%",
+            "变异系数": f"{cv:.2f}" if cv else "N/A",
+            "异常说明": "、".join(anomalies)
+        })
     
     # 显示结果
     quality_df = pd.DataFrame(quality_stats)

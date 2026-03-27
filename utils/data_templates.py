@@ -73,14 +73,24 @@ PROCESSING_TEMPLATES = {
     },
     
     "P2": {
-        "name": "销售报表清洗",
+        "name": "FB",
         "description": "清洗销售数据：提升标题 → 转换数值 → 去重",
         "protected": True,
         "steps": [
-            {"type": "提升为标题", "params": {"row_number": 3}},
-            {"type": "类型转换", "params": {"column": "销售额", "target_type": "数值"}},
-            {"type": "类型转换", "params": {"column": "利润", "target_type": "数值"}},
-            {"type": "去重", "params": {"subset": ["品牌名"], "keep": "first"}}
+            {"type": "清理表头", "params": {"pattern": "/.*$", "replacement": ""}},
+        
+        {"type": "删除列", "params": {"columns": ["会员ID", "渠道", "赛事ID", "提前结算本金", "提前结算返还", "结算时间", "第三方备注", "风险自负", "是否预约", "兑人民币汇率", "正常结算本金", 
+            "正常结算返还","订单ID"]}},
+        
+        {"type": "类型转换", "params": {"columns": ["会员ID","订单ID","赛事ID","投注额","公司输赢","会员输赢" ], "target_type": "数值"}},
+        {"type": "类型转换", "params": {"columns": ["投注时间","赛事时间"], "target_type": "日期时间"}},
+        {"type": "类型转换", "params": {"columns": [
+            "渠道会员ID","渠道","状态","备注","二次结算","投注类型","运动","联赛","赛事","是否滚球","玩法阶段","玩法名称","选项","球线",
+            "下注时比分","投注结果","赛果","赔率", "盘口类型","币种","ip地址","设备"
+        ], "target_type": "文本"}},
+        
+        {"type": "筛选", "params": {"column": "状态", "condition": "包含", "value": "已确认"}},
+        {"type": "筛选", "params": {"column": "状态", "condition": "包含", "value": "已结算"}}
         ]
     },
     
