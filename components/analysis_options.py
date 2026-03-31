@@ -13,6 +13,7 @@ from utils.stats_analyzer import StatsAnalyzer
 from utils.chart_generator import ChartGenerator
 from components.group_stats_chart import GroupStatsChart
 from utils.depth_analysis import DepthAnalysisEngine
+from components.member_analysis import MemberAnalyzer
 
 
 def render_analysis_options_tab():
@@ -28,7 +29,8 @@ def render_analysis_options_tab():
         "📊 分组统计", 
         "⏱️ 时间序列", 
         "📐 数据透视表",
-        "🥧 深度分析"
+        "🥧 深度分析",
+        "🎯 会员异常分析"
     ])
     
     with analysis_tabs[0]:
@@ -48,6 +50,344 @@ def render_analysis_options_tab():
     
     with analysis_tabs[5]:
         render_composite_pie_chart()
+    with analysis_tabs[6]:  # 会员异常分析
+        render_member_analysis_page()
+        
+def render_member_analysis_page():
+    """会员异常分析页面"""
+    st.markdown("#### 🎯 会员异常分析")
+    
+    df = st.session_state.df
+    
+    # 获取所有列
+    all_cols = df.columns.tolist()
+    
+    # ========== 调试：显示原始列名 ==========
+    with st.expander("🔍 原始数据列名"):
+        st.write("数据中的实际列名:")
+        st.write(all_cols)
+    
+    # 数据结构映射
+    st.markdown("##### 📁 数据结构定义")
+    st.caption("请指定各列对应的业务含义")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        member_col = st.selectbox("会员ID列", all_cols, key="member_col")
+        bet_amount_col = st.selectbox("投注额列", all_cols, key="bet_amount_col")
+        odds_col = st.selectbox("赔率列", all_cols, key="odds_col")
+    
+    with col2:
+        win_loss_col = st.selectbox("输赢列", all_cols, key="win_loss_col")
+        bet_time_col = st.selectbox("投注时间列(可选)", ["无"] + all_cols, key="bet_time_col")
+    
+    st.markdown("##### 📊 分类层级定义")
+    st.caption("按层级顺序选择分类列（体育类型 → 联赛 → 对阵 → 阶段 → 玩法 → 下注项）")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        t1_col = st.selectbox("体育类型列", ["无"] + all_cols, key="t1_col")
+        t2_col = st.selectbox("联赛列", ["无"] + all_cols, key="t2_col")
+    with col2:
+        t3_col = st.selectbox("对阵列", ["无"] + all_cols, key="t3_col")
+        t4_col = st.selectbox("阶段列(滚球/赛前)", ["无"] + all_cols, key="t4_col")
+    with col3:
+        t5_col = st.selectbox("玩法列", ["无"] + all_cols, key="t5_col")
+        t6_col = st.selectbox("下注项列", ["无"] + all_cols, key="t6_col")
+    
+    # 构建映射
+    mapping = {
+        "member_id": member_col,
+        "bet_amount": bet_amount_col,
+        "odds": odds_col,
+        "win_loss": win_loss_col,
+        "bet_time": bet_time_col if bet_time_col != "无" else None,
+        "t1": t1_col if t1_col != "无" else None,
+        "t2": t2_col if t2_col != "无" else None,
+        "t3": t3_col if t3_col != "无" else None,
+        "t4": t4_col if t4_col != "无" else None,
+        "t5": t5_col if t5_col != "无" else None,
+        "t6": t6_col if t6_col != "无" else None,
+    }
+    
+    # ========== 调试：显示用户选择的列映射 ==========
+    with st.expander("🔍 用户选择的列映射"):
+        mapping_display = {
+            "会员ID列": member_col,
+            "投注额列": bet_amount_col,
+            "赔率列": odds_col,
+            "输赢列": win_loss_col,
+            "投注时间列": bet_time_col if bet_time_col != "无" else None,
+            "体育类型列": t1_col if t1_col != "无" else None,
+            "联赛列": t2_col if t2_col != "无" else None,
+            "对阵列": t3_col if t3_col != "无" else None,
+            "阶段列": t4_col if t4_col != "无" else None,
+            "玩法列": t5_col if t5_col != "无" else None,
+            "下注项列": t6_col if t6_col != "无" else None,
+        }
+        st.write("用户选择的列映射:")
+        st.json(mapping_display)
+    
+    # 分析按钮
+    if st.button("🔍 开始分析", key="member_analyze", type="primary"):
+        with st.spinner("正在分析会员数据..."):
+            try:
+                from components.member_analysis import MemberAnalyzer
+                analyzer = MemberAnalyzer(df.copy(), mapping)
+                analyzer.preprocess_data()
+                results = analyzer.run_analysis()
+                raw_data = analyzer.member_stats
+                
+                
+                # 逐列打印 raw_data
+                if len(raw_data) > 0:
+                    for col in raw_data.columns:
+                        val = raw_data.iloc[0][col]
+                
+                # 保存到 session_state
+                st.session_state.member_results = results
+                st.session_state.member_raw_data = raw_data
+                st.session_state.analysis_done = True
+                
+                st.success(f"分析完成！共分析 {len(results)} 个会员")
+                st.rerun()
+            except Exception as e:
+                st.error(f"分析失败: {str(e)}")
+                import traceback
+                traceback.print_exc()
+    
+    # 显示结果
+    if st.session_state.get('analysis_done', False):
+        results = st.session_state.member_results
+        raw_data = st.session_state.member_raw_data
+        
+        # 统计摘要
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("总会员数", len(results))
+        with col2:
+            abnormal_count = len(results[results["风险等级"] != "正常"]) if "风险等级" in results.columns else 0
+            st.metric("异常会员", abnormal_count)
+        with col3:
+            high_risk = len(results[results["风险等级"] == "高危"]) if "风险等级" in results.columns else 0
+            st.metric("高危会员", high_risk)
+        with col4:
+            st.metric("正常会员", len(results) - abnormal_count)
+        
+        # 风险等级分布
+        st.markdown("##### 风险等级分布")
+        if "风险等级" in results.columns:
+            risk_dist = results["风险等级"].value_counts().reset_index()
+            risk_dist.columns = ["风险等级", "会员数"]
+            st.dataframe(risk_dist, use_container_width=True, hide_index=True)
+        
+        # 会员性质分布
+        st.markdown("##### 会员性质分布")
+        if "会员性质" in results.columns:
+            type_dist = results["会员性质"].value_counts().reset_index()
+            type_dist.columns = ["会员性质", "会员数"]
+            st.dataframe(type_dist, use_container_width=True, hide_index=True)
+        
+        # ========== 详细会员画像表格 ==========
+        st.markdown("##### 📋 详细会员画像")
+        
+        # 辅助函数
+        def get_pct(val):
+            if val is None or pd.isna(val):
+                return "0%"
+            return f"{val:.0%}"
+        # ========== 新增：玩法分布辅助函数 ==========
+        def get_top_plays(member_id):
+            """获取前3个玩法及占比"""
+            try:
+                # 从原始数据中获取该会员的玩法列
+                play_col = mapping.get("t5")
+                if not play_col or play_col not in df.columns:
+                    return "无玩法数据"
+                
+                member_data = df[df[member_col] == member_id]
+                if len(member_data) == 0:
+                    return "无数据"
+                
+                play_counts = member_data[play_col].value_counts()
+                total = len(member_data)
+                
+                if len(play_counts) == 0:
+                    return "无数据"
+                
+                top_plays = []
+                for i, (play, count) in enumerate(play_counts.head(3).items()):
+                    pct = count / total * 100
+                    # 截断过长的玩法名称
+                    play_name = str(play)[:15] + "..." if len(str(play)) > 15 else str(play)
+                    top_plays.append(f"{play_name}({pct:.0f}%)")
+                
+                if len(play_counts) > 3:
+                    other_pct = play_counts.iloc[3:].sum() / total * 100
+                    top_plays.append(f"其他({other_pct:.0f}%)")
+                
+                return " / ".join(top_plays)
+            except Exception as e:
+                return "计算失败"
+        
+        display_data = []
+        
+        # ========== 调试：逐行处理 ==========
+        
+        for idx, row in results.iterrows():
+            member_id = row["会员ID"]
+
+            
+            # 从 raw_data 获取详细分布
+            member_raw = raw_data[raw_data["会员ID"] == member_id]
+            
+            if len(member_raw) == 0:
+                continue
+            
+            mr = member_raw.iloc[0]
+            # ========== 赔率分布（带边界） ==========
+            # 获取边界
+            odds_boundary_1 = mr.get('赔率_段1_边界', '【0】')
+            odds_boundary_2 = mr.get('赔率_段2_边界', '【0】')
+            odds_boundary_3 = mr.get('赔率_段3_边界', '【0】')
+            odds_boundary_4 = mr.get('赔率_段4_边界', '【0】')
+            odds_boundary_5 = mr.get('赔率_段5_边界', '【0】')
+            
+            # 逐列获取值
+            odds_p1 = mr.get('赔率_段1占比', 0)
+            odds_p2 = mr.get('赔率_段2占比', 0)
+            odds_p3 = mr.get('赔率_段3占比', 0)
+            odds_p4 = mr.get('赔率_段4占比', 0)
+            odds_p5 = mr.get('赔率_段5占比', 0)
+            odds_hint = row.get('赔率_分段提示', '')
+            
+            # 构建赔率分布字符串
+            if odds_p1 == 0 and odds_p2 == 0 and odds_p3 == 0 and odds_p4 == 0 and odds_p5 == 0:
+                if '固定' in odds_hint:
+                    odds_dist = odds_hint
+                elif '不足' in odds_hint:
+                    odds_dist = odds_hint
+                elif '3段' in odds_hint:
+                    odds_dist = f"{odds_boundary_1}0% / {odds_boundary_2}{get_pct(odds_p2)} / {odds_boundary_3}{get_pct(odds_p3)} / {odds_boundary_4}{get_pct(odds_p4)} / {odds_boundary_5}0%"
+                else:
+                    odds_dist = "数据不足"
+            else:
+                odds_dist = f"{odds_boundary_1}{get_pct(odds_p1)} / {odds_boundary_2}{get_pct(odds_p2)} / {odds_boundary_3}{get_pct(odds_p3)} / {odds_boundary_4}{get_pct(odds_p4)} / {odds_boundary_5}{get_pct(odds_p5)}"
+            
+            # ========== 投注额分布（使用边界列） ==========
+            # 获取边界（优先使用边界列，否则使用默认值）
+            stake_boundary_1 = mr.get('投注额_段1_边界', '【0】')
+            stake_boundary_2 = mr.get('投注额_段2_边界', '【0】')
+            stake_boundary_3 = mr.get('投注额_段3_边界', '【0】')
+            stake_boundary_4 = mr.get('投注额_段4_边界', '【0】')
+            stake_boundary_5 = mr.get('投注额_段5_边界', '【0】')
+
+            # 投注额分布
+            stake_p1 = mr.get('投注额_段1占比', 0)
+            stake_p2 = mr.get('投注额_段2占比', 0)
+            stake_p3 = mr.get('投注额_段3占比', 0)
+            stake_p4 = mr.get('投注额_段4占比', 0)
+            stake_p5 = mr.get('投注额_段5占比', 0)
+            stake_dist = f"{stake_boundary_1}{get_pct(stake_p1)} / {stake_boundary_2}{get_pct(stake_p2)} / {stake_boundary_3}{get_pct(stake_p3)} / {stake_boundary_4}{get_pct(stake_p4)} / {stake_boundary_5}{get_pct(stake_p5)}"
+            
+            # ========== 输赢分布（使用边界列） ==========
+            winloss_boundary_1 = mr.get('输赢_段1_边界', '【0】')
+            winloss_boundary_2 = mr.get('输赢_段2_边界', '【0】')
+            winloss_boundary_3 = mr.get('输赢_段3_边界', '【0】')
+            winloss_boundary_4 = mr.get('输赢_段4_边界', '【0】')
+            winloss_boundary_5 = mr.get('输赢_段5_边界', '【0】')
+            # 输赢分布
+            winloss_p1 = mr.get('输赢_段1占比', 0)
+            winloss_p2 = mr.get('输赢_段2占比', 0)
+            winloss_p3 = mr.get('输赢_段3占比', 0)
+            winloss_p4 = mr.get('输赢_段4占比', 0)
+            winloss_p5 = mr.get('输赢_段5占比', 0)
+            winloss_dist = f"{winloss_boundary_1}{get_pct(winloss_p1)} / {winloss_boundary_2}{get_pct(winloss_p2)} / {winloss_boundary_3}{get_pct(winloss_p3)} / {winloss_boundary_4}{get_pct(winloss_p4)} / {winloss_boundary_5}{get_pct(winloss_p5)}"
+            
+            # 集中度
+            sport_conc = mr.get('t1_集中度', 0)
+            league_conc = mr.get('t2_集中度', 0)
+            play_conc = mr.get('t5_集中度', 0)
+            concentration = f"体育{get_pct(sport_conc)} 联赛{get_pct(league_conc)} 玩法{get_pct(play_conc)}"
+            
+            # 其他指标
+            odds_cv = mr.get('赔率变异系数', 0)
+            stake_cv = mr.get('投注额变异系数', 0)
+            if pd.isna(odds_cv):
+                other_metrics = "N/A"
+            else:
+                other_metrics = f"赔率CV={odds_cv:.2f} 投注CV={stake_cv:.2f}"
+                
+             # 计算玩法分布
+            play_dist = get_top_plays(member_id)
+            
+            display_data.append({
+                "会员ID": member_id,
+                "会员性质": row.get("会员性质", "未知"),
+                "风险等级": row.get("风险等级", "正常"),
+                "赔率分布": odds_dist,
+                "投注额分布": stake_dist,
+                "输赢分布": winloss_dist,
+                "玩法分布": play_dist,  # 新增
+                "集中度": concentration,
+                "其他指标": other_metrics,
+                "验证详情": row.get("验证详情", "")
+            })
+
+
+        
+        if display_data:
+            display_df = pd.DataFrame(display_data)
+            # 调整列顺序
+            column_order = ["会员ID", "会员性质", "风险等级", "赔率分布", "投注额分布", "输赢分布", "玩法分布", "集中度", "其他指标", "验证详情"]
+            display_df = display_df[column_order]
+            
+            # 风险等级筛选
+            risk_filter = st.multiselect(
+                "筛选风险等级",
+                ["高危", "中危", "风险", "留意", "正常"],
+                default=["高危", "中危", "风险", "留意", "正常"],
+                key="risk_filter"
+            )
+            
+            filtered = display_df[display_df["风险等级"].isin(risk_filter)]
+            if len(filtered) == 0:
+                filtered = display_df
+                st.info("当前筛选条件无匹配，显示全部数据")
+            
+            # 颜色标记函数
+            def color_risk(val):
+                if val == "高危":
+                    return 'background-color: #ffcccc'
+                elif val == "中危":
+                    return 'background-color: #fff3cd'
+                elif val == "风险":
+                    return 'background-color: #ffe0b3'
+                elif val == "留意":
+                    return 'background-color: #d1ecf1'
+                return ''
+            
+            # 显示表格
+            st.dataframe(
+                filtered.style.applymap(color_risk, subset=["风险等级"]),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # 导出按钮
+            csv = filtered.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 导出会员画像",
+                data=csv,
+                file_name=f"member_profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="export_member"
+            )
+        else:
+            st.info("没有生成会员画像数据")
+    else:
+        st.info("请配置数据结构后点击「开始分析」")
+        
 def render_data_quality_analysis():
     """数据质量分析（异常检测）"""
     st.markdown("##### ⚠️ 数据质量分析")

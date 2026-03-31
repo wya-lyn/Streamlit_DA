@@ -129,7 +129,7 @@ ThemeManager.apply_custom_css()
 def execute_data_operation(operation_func, operation_name, *args, **kwargs):
     """执行数据操作的标准流程"""
     try:
-        Logger.info(f"开始执行{operation_name}操作")
+        Logger.info(f"执行操作: {operation_name}, 数据形状: {before_shape} -> {after_shape}")
         before_shape = st.session_state.df.shape if st.session_state.df is not None else (0, 0)
         
         # 执行操作
@@ -150,7 +150,7 @@ def execute_data_operation(operation_func, operation_name, *args, **kwargs):
         
         return True, f"{operation_name}操作成功"
     except Exception as e:
-        Logger.error(f"{operation_name}失败: {str(e)}")
+        Logger.exception(f"操作失败: {str(e)}")
         return False, f"{operation_name}失败: {str(e)}"
 
 # ============================================
@@ -215,6 +215,8 @@ def render_file_uploader():
         df = managers['file_loader'].load_file(uploaded_file)
     
     if df is not None:
+        Logger.info(f"文件上传成功: {uploaded_file.name}, {len(df)}行 x {len(df.columns)}列")
+        
         df = df.reset_index(drop=True)
         st.session_state.df = df
         st.session_state.original_df = df.copy()
@@ -341,6 +343,7 @@ def preview_unified_filter(column, condition, value):
         st.rerun()
         
     except Exception as e:
+        Logger.exception(f"操作失败: {str(e)}")
         st.error(f"预览失败: {str(e)}")
 
 def apply_unified_filter(column, condition, value):
@@ -426,6 +429,7 @@ def apply_unified_filter(column, condition, value):
         st.rerun()
         
     except Exception as e:
+        Logger.exception(f"操作失败: {str(e)}")
         st.error(f"筛选失败: {str(e)}")
 
 
@@ -946,6 +950,20 @@ def render_ai_analysis_page():
 def render_settings_page():
     """设置页面"""
     st.markdown("## ⚙️ 系统设置")
+    st.divider()
+    
+    # 日志管理
+    st.markdown("### 📋 日志管理")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📄 查看日志", key="view_logs"):
+            from utils.logger import Logger
+            Logger.show_logs()
+    with col2:
+        if st.button("🗑️ 清空日志", key="clear_logs"):
+            from utils.logger import Logger
+            Logger.clear_logs()
+            st.rerun()
     
     # 主题设置
     st.markdown("### 主题设置")
@@ -1000,6 +1018,7 @@ def render_settings_page():
 # 主程序入口
 # ============================================
 def main():
+    Logger.info("=== 应用启动 ===")
     """主程序入口"""
     managers['announcement'].show_announcements()  
     # 顶部区域

@@ -144,7 +144,6 @@ def _execute_step(step):
     # ========== 删除列 ==========
     elif step_type == "删除列":
         columns = params.get("columns", [])
-        print(columns)
         if columns:
             execute_data_operation(st.session_state.df, st.session_state.df, "删除列", columns)
     
@@ -302,7 +301,6 @@ def render_quick_process():
                 st.warning(f"🔒 模板 '{template['name']}' 需要密码授权")
                 
                 # ===== 调试信息 =====
-
                 stored_pwd = get_stored_password()
                 st.info(f"【调试】系统密码长度: {len(stored_pwd)} (输入密码后点击验证)")
                 # ===== 调试结束 =====
