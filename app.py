@@ -1019,7 +1019,6 @@ def render_settings_page():
 # ============================================
 def main():
     Logger.info("=== 应用启动 ===")
-    """主程序入口"""
     managers['announcement'].show_announcements()  
     # 顶部区域
     col1, col2, col3 = st.columns([2, 1, 1])

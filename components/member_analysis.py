@@ -84,17 +84,17 @@ class MemberAnalyzer:
         
         # ========== 2. 基础聚合统计 ==========
         member_group = df.groupby(member_col)
-        
+
         bet_stats = member_group.agg({
-            self.mapping["bet_amount"]: ['sum', 'mean', 'max', 'count', 'std'],
-            self.mapping["win_loss"]: ['sum', 'mean', 'std'],
-            self.mapping["odds"]: ['mean', 'std']
+            self.mapping["bet_amount"]: ['sum', 'mean', 'min', 'max', 'count', 'std'],
+            self.mapping["win_loss"]: ['sum', 'mean', 'min', 'max', 'std'],
+            self.mapping["odds"]: ['mean', 'min', 'max', 'std']
         }).reset_index()
-        
+
         bet_stats.columns = [
-            '会员ID', '总投注额', '平均投注额', '单笔最大投注', '投注次数', '投注额标准差',
-            '总输赢', '平均输赢', '输赢标准差',
-            '平均赔率', '赔率标准差'
+            '会员ID', '总投注额', '平均投注额', '单笔最小投注', '单笔最大投注', '投注次数', '投注额标准差',
+            '总输赢', '平均输赢', '单笔最小输赢', '单笔最大输赢', '输赢标准差',
+            '平均赔率', '单笔最小赔率', '单笔最大赔率', '赔率标准差'
         ]
         
         # ========== 3. 时间间隔分析 ==========
@@ -106,7 +106,9 @@ class MemberAnalyzer:
             bet_stats = bet_stats.merge(interval_stats, on='会员ID', how='left').fillna(0)
         
         # ========== 4. 文本列集中度分析 ==========
-        for col_key in ['t1', 't2', 't3', 't4', 't5', 't6']:
+        concentration_fields = ['t1', 't2', 't4', 't5', 't6']
+
+        for col_key in concentration_fields:
             col_name = self.mapping.get(col_key)
             if col_name and col_name in df.columns:
                 member_cat = df.groupby([member_col, col_name]).size().reset_index(name='计数')
@@ -398,121 +400,202 @@ class MemberAnalyzer:
         
         # ========== 8. 变异系数 ==========
         bet_stats['赔率变异系数'] = bet_stats['赔率标准差'] / bet_stats['平均赔率'].replace(0, np.nan)
+        # 投注额变异系数
         bet_stats['投注额变异系数'] = bet_stats['投注额标准差'] / bet_stats['平均投注额'].replace(0, np.nan)
+        # 输赢变异系数
         bet_stats['输赢变异系数'] = bet_stats['输赢标准差'] / bet_stats['平均输赢'].replace(0, np.nan)
-        
-        # 填充空值
-        bet_stats = bet_stats.fillna(0)
+
+        # 填充空值为0（表示无法计算或为常数列）
+        bet_stats['赔率变异系数'] = bet_stats['赔率变异系数'].fillna(0)
+        bet_stats['投注额变异系数'] = bet_stats['投注额变异系数'].fillna(0)
+        bet_stats['输赢变异系数'] = bet_stats['输赢变异系数'].fillna(0)
         
         self.member_stats = bet_stats
         
         return self
     
     def determine_member_type(self, row):
-        """判定会员类型"""
-        # 赔率分段
-        odds_p1 = row.get('赔率_段1占比', 0)
-        odds_p2 = row.get('赔率_段2占比', 0)
-        odds_p3 = row.get('赔率_段3占比', 0)
-        odds_p4 = row.get('赔率_段4占比', 0)
-        odds_p5 = row.get('赔率_段5占比', 0)
+        """
+        判定会员类型（基于累加评分机制）
+        返回: (类型, 风险等级, 验证详情, 总分)
+        """
+        # ========== 获取各项指标 ==========
+        # 赔率分段占比
+        odds_p1 = row.get('赔率_段1占比', 0)      # 低赔区 (1.0-1.5)
+        odds_p2 = row.get('赔率_段2占比', 0)      # 中低赔区 (1.5-1.8)
+        odds_p3 = row.get('赔率_段3占比', 0)      # 正常区 (1.8-2.0)
+        odds_p4 = row.get('赔率_段4占比', 0)      # 中高赔区 (2.0-2.5)
+        odds_p5 = row.get('赔率_段5占比', 0)      # 高赔区 (>2.5)
         
-        # 投注额分段
-        stake_p1 = row.get('投注额_段1占比', 0)
-        stake_p2 = row.get('投注额_段2占比', 0)
-        stake_p3 = row.get('投注额_段3占比', 0)
-        stake_p4 = row.get('投注额_段4占比', 0)
-        stake_p5 = row.get('投注额_段5占比', 0)
+        # 投注额分段占比
+        stake_p1 = row.get('投注额_段1占比', 0)   # 微注区
+        stake_p2 = row.get('投注额_段2占比', 0)   # 小额区
+        stake_p3 = row.get('投注额_段3占比', 0)   # 中额区
+        stake_p4 = row.get('投注额_段4占比', 0)   # 大额区
+        stake_p5 = row.get('投注额_段5占比', 0)   # 超大额区
         
-        # 输赢分段
-        winloss_p1 = row.get('输赢_段1占比', 0)
-        winloss_p2 = row.get('输赢_段2占比', 0)
-        winloss_p3 = row.get('输赢_段3占比', 0)
-        winloss_p4 = row.get('输赢_段4占比', 0)
-        winloss_p5 = row.get('输赢_段5占比', 0)
+        # 输赢分段占比
+        winloss_p1 = row.get('输赢_段1占比', 0)   # 大额亏损
+        winloss_p2 = row.get('输赢_段2占比', 0)   # 中等亏损
+        winloss_p3 = row.get('输赢_段3占比', 0)   # 持平/微利
+        winloss_p4 = row.get('输赢_段4占比', 0)   # 中等盈利
+        winloss_p5 = row.get('输赢_段5占比', 0)   # 大额盈利
         
-        # 集中度
+        # 体育类型集中度
         sport_conc = row.get('t1_集中度', 0)
+        # 联赛集中度
         league_conc = row.get('t2_集中度', 0)
-        play_conc = row.get('t5_集中度', 0)
+        # 赛事状态集中度（原 t4，滚球/赛前）
+        status_conc = row.get('t4_集中度', 0)
+        # 比赛阶段集中度（新 t5，上半场/下半场等）
+        match_stage_conc = row.get('t5_集中度', 0)
+        # 玩法集中度（原 t5，现 t6）
+        play_conc = row.get('t6_集中度', 0)
         
-        # 其他指标
-        freq_daily = row.get('日均投注次数', 0)
-        interval_short = row.get('最小间隔秒数', 999)
-        
+        # 变异系数
+        odds_cv = row.get('赔率变异系数', 0)
         stake_cv = row.get('投注额变异系数', 0)
         winloss_cv = row.get('输赢变异系数', 0)
         
-        # 软件刷单
-        if odds_p1 > 0.6 and stake_p1 > 0.5 and play_conc > 0.7:
-            return "🤖 软件刷单", "高危", [
-                f"低赔{odds_p1:.0%}>60% ✓",
-                f"微注{stake_p1:.0%}>50% ✓",
-                f"玩法集中{play_conc:.0%}>70% ✓"
-            ]
+        # 高频指标
+        freq_daily = row.get('日均投注次数', 0)
+        interval_short = row.get('最小间隔秒数', 999)
         
-        # 套利玩家
-        elif odds_p1 > 0.6 and (winloss_p2 + winloss_p3) > 0.5:
-            return "💰 套利玩家", "高危", [
-                f"低赔{odds_p1:.0%}>60% ✓",
-                f"微利/微亏{(winloss_p2+winloss_p3):.0%}>50% ✓"
-            ]
+        # ========== 评分累加 ==========
+        score = 0
+        features = []
         
-        # 职业玩家
-        elif odds_p2 > 0.4 and stake_p2 > 0.4 and winloss_p2 > 0.4:
-            return "🎯 职业玩家", "留意", [
-                f"中低赔{odds_p2:.0%}>40% ✓",
-                f"稳定投注{stake_p2:.0%}>40% ✓",
-                f"微利{winloss_p2:.0%}>40% ✓"
-            ]
+        # 1. 赔率偏好
+        if odds_p1 > 0.6:
+            score += 1
+            features.append(f"低赔偏好({odds_p1:.0%})")
+        if odds_p4 + odds_p5 > 0.5:
+            score += 1
+            features.append(f"高赔偏好({(odds_p4+odds_p5):.0%})")
         
-        # 高赔猎手
-        elif (odds_p4 + odds_p5) > 0.5 and (stake_p4 + stake_p5) > 0.4:
-            return "🎲 高赔猎手", "风险", [
-                f"高赔{(odds_p4+odds_p5):.0%}>50% ✓",
-                f"大额投注{(stake_p4+stake_p5):.0%}>40% ✓"
-            ]
+        # 2. 投注额偏好
+        if stake_p1 > 0.5:
+            score += 1
+            features.append(f"微注偏好({stake_p1:.0%})")
+        if stake_p4 + stake_p5 > 0.4:
+            score += 1
+            features.append(f"大额投注({(stake_p4+stake_p5):.0%})")
         
-        # 问题玩家
-        elif winloss_p5 > 0.3 and (stake_p4 + stake_p5) > 0.4:
-            return "💸 问题玩家", "高危", [
-                f"大额亏{winloss_p5:.0%}>30% ✓",
-                f"大额投注{(stake_p4+stake_p5):.0%}>40% ✓"
-            ]
+        # 3. 输赢特征
+        if winloss_p2 + winloss_p3 > 0.6:
+            score += 1
+            features.append(f"输赢稳定({(winloss_p2+winloss_p3):.0%})")
+        if winloss_p5 > 0.3:
+            score += 1
+            features.append(f"大额亏损({winloss_p5:.0%})")
+        if winloss_p4 + winloss_p5 > 0.5:
+            score += 1
+            features.append(f"大额盈利({(winloss_p4+winloss_p5):.0%})")
         
-        # 单一玩家
-        elif sport_conc > 0.8 and league_conc > 0.8 and play_conc > 0.8:
-            return "🎯 单一玩家", "留意", [
-                f"体育集中{sport_conc:.0%}>80% ✓",
-                f"联赛集中{league_conc:.0%}>80% ✓",
-                f"玩法集中{play_conc:.0%}>80% ✓"
-            ]
+        # 4. 集中度（单一偏好）
+        if sport_conc > 0.8:
+            score += 1
+            features.append(f"单一体育({sport_conc:.0%})")
+        if league_conc > 0.8:
+            score += 1
+            features.append(f"单一联赛({league_conc:.0%})")
+        if play_conc > 0.8:
+            score += 1
+            features.append(f"单一玩法({play_conc:.0%})")
+        if match_stage_conc > 0.9:
+            score += 1
+            features.append(f"单一阶段({match_stage_conc:.0%})")
         
-        # 波动玩家
-        elif stake_cv > 1.5 and winloss_cv > 2.0:
-            return "📊 波动玩家", "留意", [
-                f"投注额CV{stake_cv:.1f}>1.5 ✓",
-                f"输赢CV{winloss_cv:.1f}>2.0 ✓"
-            ]
+        # 5. 高频特征
+        if freq_daily > 50:
+            score += 1
+            features.append(f"高频投注({freq_daily:.0f}次/日)")
+        if interval_short < 10:
+            score += 1
+            features.append(f"间隔极短({interval_short:.0f}秒)")
         
-        # 高频玩家
-        elif freq_daily > 50 and interval_short < 10:
-            return "⚡ 高频玩家", "中危", [
-                f"日投注{freq_daily:.0f}>50 ✓",
-                f"最小间隔{interval_short:.0f}秒<10秒 ✓"
-            ]
+        # 6. 波动特征
+        if odds_cv < 0.05:
+            score += 1
+            features.append(f"固定赔率({odds_cv:.2f})")
+        if stake_cv < 0.1:
+            score += 1
+            features.append(f"固定投注({stake_cv:.2f})")
+        if stake_cv > 1.5:
+            score += 1
+            features.append(f"投注波动大({stake_cv:.2f})")
+        if winloss_cv > 2.0:
+            score += 1
+            features.append(f"输赢波动大({winloss_cv:.2f})")
         
-        # 反水玩家
-        elif odds_p1 > 0.4 and interval_short < 30 and winloss_p2 > 0.4:
-            return "💵 反水玩家", "中危", [
-                f"低赔{odds_p1:.0%}>40% ✓",
-                f"高频间隔{interval_short:.0f}秒<30秒 ✓",
-                f"微亏{winloss_p2:.0%}>40% ✓"
-            ]
-        
-        # 正常玩家
+        # ========== 3. 确定基础类型和风险等级 ==========
+        if score == 0:
+            risk_level = "正常"
+            member_type = "👤 正常玩家"
+            type_desc = "各项指标分布均匀，无明显异常"
+        elif score <= 2:
+            risk_level = "留意"
+            member_type = "👀 观察玩家"
+            type_desc = f"有 {score} 个轻微异常特征，建议关注"
+        elif score <= 4:
+            risk_level = "风险"
+            member_type = "⚠️ 风险玩家"
+            type_desc = f"有 {score} 个异常特征，存在风险行为"
+        elif score <= 6:
+            risk_level = "高危"
+            member_type = "🔴 高危玩家"
+            type_desc = f"有 {score} 个严重异常特征，高度可疑"
         else:
-            return "👤 正常玩家", "正常", ["各项指标分布均匀，无明显异常"]
+            risk_level = "异常"
+            member_type = "💀 异常玩家"
+            type_desc = f"有 {score} 个极度异常特征，强烈建议审查"
+        
+        # ========== 4. 收集匹配类型（独立列表）==========
+        matched_types = []
+        
+        # 软件刷单（使用玩法集中度 play_conc）
+        if odds_p1 > 0.6 and stake_p1 > 0.5 and play_conc > 0.7:
+            matched_types.append("软件刷单")
+
+        # 套利玩家
+        if odds_p1 > 0.6 and (winloss_p2 + winloss_p3) > 0.5:
+            matched_types.append("套利玩家")
+
+        # 职业玩家
+        if odds_p2 > 0.4 and stake_p2 > 0.4 and winloss_p2 > 0.4:
+            matched_types.append("职业玩家")
+
+        # 高赔猎手
+        if (odds_p4 + odds_p5) > 0.5 and (stake_p4 + stake_p5) > 0.4:
+            matched_types.append("高赔猎手")
+
+        # 问题玩家
+        if winloss_p5 > 0.3 and (stake_p4 + stake_p5) > 0.4:
+            matched_types.append("问题玩家")
+
+        # 单一玩家（使用体育、联赛、玩法集中度）
+        if sport_conc > 0.8 and league_conc > 0.8 and play_conc > 0.8:
+            matched_types.append("单一玩家")
+
+        # 阶段偏好玩家（使用赛事状态集中度 status_conc，不是比赛阶段）
+        if status_conc > 0.9:
+            matched_types.append("阶段偏好玩家")
+
+        # 高频玩家
+        if freq_daily > 50 and interval_short < 10:
+            matched_types.append("高频玩家")
+
+        # 波动玩家
+        if stake_cv > 1.5 and winloss_cv > 2.0:
+            matched_types.append("波动玩家")
+        
+        # ========== 5. 构建验证详情（匹配类型不加入 features）==========
+        details = [f"总分: {score}", f"触发特征: {', '.join(features[:5])}"]
+        if len(features) > 5:
+            details.append(f"等{len(features)}个特征")
+        details.append(type_desc)
+        
+        return member_type, risk_level, " | ".join(details), matched_types, score
     
     def run_analysis(self):
         """执行分析"""
@@ -521,13 +604,18 @@ class MemberAnalyzer:
         
         results = []
         for _, row in self.member_stats.iterrows():
-            member_type, risk_level, details = self.determine_member_type(row)
+            member_type, risk_level, details, matched_types, score = self.determine_member_type(row)
+            
+            # 将匹配类型列表转换为字符串
+            matched_types_str = " / ".join(matched_types) if matched_types else ""
             
             results.append({
                 "会员ID": row["会员ID"],
                 "会员性质": member_type,
                 "风险等级": risk_level,
-                "验证详情": " | ".join(details),
+                "匹配类型": matched_types_str,  # 新增
+                "验证详情": details,
+                "总分": score,  # 新增，便于后续使用
                 "总投注额": row.get("总投注额", 0),
                 "投注次数": row.get("投注次数", 0),
                 "平均赔率": row.get("平均赔率", 0),
@@ -535,7 +623,7 @@ class MemberAnalyzer:
                 "赔率集中": row.get("赔率_集中度", 0),
                 "投注额集中": row.get("投注额_集中度", 0),
                 "玩法集中": row.get("t5_集中度", 0),
-                "赔率_分段提示": row.get("赔率_分段提示", "")  # 必须存在
+                "赔率_分段提示": row.get("赔率_分段提示", "")
             })       
         self.results = pd.DataFrame(results)
         return self.results

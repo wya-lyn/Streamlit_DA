@@ -62,54 +62,58 @@ def render_member_analysis_page():
     # 获取所有列
     all_cols = df.columns.tolist()
     
-    # ========== 调试：显示原始列名 ==========
-    with st.expander("🔍 原始数据列名"):
-        st.write("数据中的实际列名:")
-        st.write(all_cols)
     
-    # 数据结构映射
+    # ========== 区块1：数据结构定义（数值/时间字段）==========
     st.markdown("##### 📁 数据结构定义")
     st.caption("请指定各列对应的业务含义")
-    
-    col1, col2 = st.columns(2)
+
+    col1, col2, col3 = st.columns(3)
     with col1:
         member_col = st.selectbox("会员ID列", all_cols, key="member_col")
         bet_amount_col = st.selectbox("投注额列", all_cols, key="bet_amount_col")
-        odds_col = st.selectbox("赔率列", all_cols, key="odds_col")
-    
     with col2:
-        win_loss_col = st.selectbox("输赢列", all_cols, key="win_loss_col")
         bet_time_col = st.selectbox("投注时间列(可选)", ["无"] + all_cols, key="bet_time_col")
-    
+        odds_col = st.selectbox("赔率列", all_cols, key="odds_col")
+    with col3:
+        win_loss_col = st.selectbox("输赢列", all_cols, key="win_loss_col")
+        # 预留空位保持布局
+
+    # ========== 区块2：分类层级定义（文本字段）==========
     st.markdown("##### 📊 分类层级定义")
-    st.caption("按层级顺序选择分类列（体育类型 → 联赛 → 对阵 → 阶段 → 玩法 → 下注项）")
-    
-    col1, col2, col3 = st.columns(3)
+    st.caption("按层级顺序选择分类列（体育类型 → 联赛 → 对阵 → 赛事状态 → 比赛阶段 → 玩法 → 下注项）")
+
+    # 使用2列布局，共4行
+    col1, col2 = st.columns(2)
+
     with col1:
         t1_col = st.selectbox("体育类型列", ["无"] + all_cols, key="t1_col")
-        t2_col = st.selectbox("联赛列", ["无"] + all_cols, key="t2_col")
-    with col2:
         t3_col = st.selectbox("对阵列", ["无"] + all_cols, key="t3_col")
-        t4_col = st.selectbox("阶段列(滚球/赛前)", ["无"] + all_cols, key="t4_col")
-    with col3:
-        t5_col = st.selectbox("玩法列", ["无"] + all_cols, key="t5_col")
-        t6_col = st.selectbox("下注项列", ["无"] + all_cols, key="t6_col")
+        t5_col = st.selectbox("比赛阶段列", ["无"] + all_cols, key="t5_col")
+
+    with col2:
+        t2_col = st.selectbox("联赛列", ["无"] + all_cols, key="t2_col")
+        t4_col = st.selectbox("赛事状态列(滚球/赛前)", ["无"] + all_cols, key="t4_col")
+        t6_col = st.selectbox("玩法列", ["无"] + all_cols, key="t6_col")
+
+    # 下注项单独一行
+    t7_col = st.selectbox("下注项列", ["无"] + all_cols, key="t7_col")
     
     # 构建映射
     mapping = {
-        "member_id": member_col,
-        "bet_amount": bet_amount_col,
-        "odds": odds_col,
-        "win_loss": win_loss_col,
-        "bet_time": bet_time_col if bet_time_col != "无" else None,
-        "t1": t1_col if t1_col != "无" else None,
-        "t2": t2_col if t2_col != "无" else None,
-        "t3": t3_col if t3_col != "无" else None,
-        "t4": t4_col if t4_col != "无" else None,
-        "t5": t5_col if t5_col != "无" else None,
-        "t6": t6_col if t6_col != "无" else None,
-    }
-    
+            "member_id": member_col,
+            "bet_amount": bet_amount_col,
+            "odds": odds_col,
+            "win_loss": win_loss_col,
+            "bet_time": bet_time_col if bet_time_col != "无" else None,
+            "t1": t1_col if t1_col != "无" else None,
+            "t2": t2_col if t2_col != "无" else None,
+            "t3": t3_col if t3_col != "无" else None,
+            "t4": t4_col if t4_col != "无" else None,
+            "t5": t5_col if t5_col != "无" else None,  # 比赛阶段
+            "t6": t6_col if t6_col != "无" else None,  # 玩法
+            "t7": t7_col if t7_col != "无" else None,  # 下注项
+        }
+            
     # ========== 调试：显示用户选择的列映射 ==========
     with st.expander("🔍 用户选择的列映射"):
         mapping_display = {
@@ -132,7 +136,7 @@ def render_member_analysis_page():
     if st.button("🔍 开始分析", key="member_analyze", type="primary"):
         with st.spinner("正在分析会员数据..."):
             try:
-                from components.member_analysis import MemberAnalyzer
+                
                 analyzer = MemberAnalyzer(df.copy(), mapping)
                 analyzer.preprocess_data()
                 results = analyzer.run_analysis()
@@ -148,6 +152,8 @@ def render_member_analysis_page():
                 st.session_state.member_results = results
                 st.session_state.member_raw_data = raw_data
                 st.session_state.analysis_done = True
+                st.session_state.mapping = mapping     
+                st.session_state.original_df = df    
                 
                 st.success(f"分析完成！共分析 {len(results)} 个会员")
                 st.rerun()
@@ -158,50 +164,336 @@ def render_member_analysis_page():
     
     # 显示结果
     if st.session_state.get('analysis_done', False):
+        
         results = st.session_state.member_results
         raw_data = st.session_state.member_raw_data
+        mapping = st.session_state.get('mapping', None)
+        df_original = st.session_state.get('original_df', None)
         
-        # 统计摘要
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("总会员数", len(results))
-        with col2:
-            abnormal_count = len(results[results["风险等级"] != "正常"]) if "风险等级" in results.columns else 0
-            st.metric("异常会员", abnormal_count)
-        with col3:
-            high_risk = len(results[results["风险等级"] == "高危"]) if "风险等级" in results.columns else 0
-            st.metric("高危会员", high_risk)
-        with col4:
-            st.metric("正常会员", len(results) - abnormal_count)
+        member_col = mapping["member_id"]
+        
+        # ========== 数据质量检测表 ==========
+        st.markdown("##### 📊 数据质量检测表")
+        st.caption("按会员统计的数据质量报告，订单数<10单显示'样本不足'")
+
+        # 构建质量检测表数据
+        quality_data = []
+
+        for _, row in results.iterrows():
+            member_id = row["会员ID"]
+            bet_count = row.get("投注次数", 0)
+            
+            # 获取该会员的原始数据
+            member_df = df_original[df_original[member_col] == member_id]
+            
+            # 基础信息
+            quality_row = {
+                "会员ID": member_id,
+                "订单数": bet_count,
+            }
+            
+            # 判断样本是否充足
+            if bet_count < 10:
+                # 样本不足，所有统计列显示"样本不足"
+                quality_row["数据质量"] = "❌ 样本不足"
+                quality_row["数据质量详情"] = f"订单数不足10单 ({bet_count}单)"
+                
+                # 文本列（t1-t7）
+                for col_key in ['t1', 't2', 't3', 't4', 't5', 't6', 't7']:
+                    actual_col_name = mapping.get(col_key)
+                    if actual_col_name and actual_col_name in df_original.columns:
+                        quality_row[f'{actual_col_name}_最高频值'] = "样本不足"
+                        quality_row[f'{actual_col_name}_最高频占比'] = "样本不足"
+                        quality_row[f'{actual_col_name}_唯一值数'] = "样本不足"
+                
+                # 数值列（赔率、投注额、输赢）
+                for num_name in ['赔率', '投注额']:
+                    quality_row[f'{num_name}_均值'] = "样本不足"
+                    quality_row[f'{num_name}_标准差'] = "样本不足"
+                    quality_row[f'{num_name}_最小值'] = "样本不足"
+                    quality_row[f'{num_name}_最大值'] = "样本不足"
+                    quality_row[f'{num_name}_变异系数'] = "样本不足"
+                    quality_row[f'{num_name}_高频区间'] = "样本不足"
+
+                # 输赢单独处理（只保留正负分布和倾向）
+                quality_row["输赢_正负分布"] = "样本不足"
+                quality_row["输赢_倾向"] = "样本不足"
+                
+                quality_data.append(quality_row)
+                continue
+            
+            # ========== 样本充足，计算详细统计 ==========
+            
+            # 计算数据质量等级（使用评分）
+            
+            # 从 results 中直接获取风险等级
+            risk_level = row.get("风险等级", "正常")
+
+            # 根据 risk_level 设置数据质量
+            if risk_level == "正常":
+                quality_row["数据质量"] = "✅ 良好"
+                quality_row["数据质量详情"] = "良好"
+            elif risk_level == "留意":
+                quality_row["数据质量"] = "⚠️ 中风险"
+                quality_row["数据质量详情"] = "留意玩家 (需关注)"
+            elif risk_level == "风险":
+                quality_row["数据质量"] = "🔴 高风险"
+                quality_row["数据质量详情"] = "风险玩家 (存在异常行为)"
+            elif risk_level == "高危":
+                quality_row["数据质量"] = "💀 严重异常"
+                quality_row["数据质量详情"] = "高危玩家 (高度可疑)"
+            elif risk_level == "异常":
+                quality_row["数据质量"] = "💀 严重异常"
+                quality_row["数据质量详情"] = "异常玩家 (强烈建议审查)"
+            else:
+                quality_row["数据质量"] = "❓ 未知"
+                quality_row["数据质量详情"] = "无法判定"
+            
+            # 文本列统计
+            # 文本列统计（使用实际列名）
+            for col_key in ['t1', 't2', 't3', 't4', 't5', 't6']:
+                actual_col_name = mapping.get(col_key)
+                if actual_col_name and actual_col_name in df_original.columns:
+                    member_cat_data = member_df[actual_col_name].dropna()
+                    if len(member_cat_data) > 0:
+                        value_counts = member_cat_data.value_counts()
+                        top_value = value_counts.index[0] if len(value_counts) > 0 else "无数据"
+                        top_pct = value_counts.iloc[0] / len(member_cat_data) if len(value_counts) > 0 else 0
+                        unique_count = member_cat_data.nunique()
+                        
+                        quality_row[f'{actual_col_name}_最高频值'] = str(top_value)[:20] if top_value != "无数据" else "无数据"
+                        quality_row[f'{actual_col_name}_最高频占比'] = f"{top_pct:.0%}" if top_pct > 0 else "0%"
+                        quality_row[f'{actual_col_name}_唯一值数'] = unique_count
+                    else:
+                        quality_row[f'{actual_col_name}_最高频值'] = "无数据"
+                        quality_row[f'{actual_col_name}_最高频占比'] = "0%"
+                        quality_row[f'{actual_col_name}_唯一值数'] = 0
+            
+            # 从 raw_data 获取统计（赔率、投注额、输赢）
+            mr = raw_data[raw_data["会员ID"] == member_id].iloc[0] if len(raw_data[raw_data["会员ID"] == member_id]) > 0 else None
+            
+            if mr is not None:
+                # ========== 赔率统计 ==========
+                avg_odds = mr.get('平均赔率', 0) if not pd.isna(mr.get('平均赔率', 0)) else 0
+                odds_std = mr.get('赔率标准差', 0) if not pd.isna(mr.get('赔率标准差', 0)) else 0
+                odds_min = mr.get('单笔最小赔率', 0) if '单笔最小赔率' in mr.index and not pd.isna(mr.get('单笔最小赔率', 0)) else "N/A"
+                odds_max = mr.get('单笔最大赔率', 0) if '单笔最大赔率' in mr.index and not pd.isna(mr.get('单笔最大赔率', 0)) else "N/A"
+                odds_cv = mr.get('赔率变异系数', 0) if not pd.isna(mr.get('赔率变异系数', 0)) else 0
+
+                quality_row["赔率_均值"] = f"{avg_odds:.2f}" if avg_odds > 0 else "N/A"
+                quality_row["赔率_标准差"] = f"{odds_std:.2f}" if odds_std > 0 else "N/A"
+                quality_row["赔率_最小值"] = f"{odds_min:.2f}" if odds_min != "N/A" and odds_min > 0 else "N/A"
+                quality_row["赔率_最大值"] = f"{odds_max:.2f}" if odds_max != "N/A" and odds_max > 0 else "N/A"
+                # 修复变异系数显示：区分0和N/A
+                if odds_cv > 0:
+                    quality_row["赔率_变异系数"] = f"{odds_cv:.2f}"
+                elif odds_cv == 0:
+                    quality_row["赔率_变异系数"] = "0.00"
+                else:
+                    quality_row["赔率_变异系数"] = "N/A"
+                
+                # 计算赔率高频区间（均值±10%）
+                if avg_odds > 0:
+                    lower = avg_odds * 0.9
+                    upper = avg_odds * 1.1
+                    
+                    # 确保 lower 和 upper 是有效数值
+                    if pd.isna(lower) or pd.isna(upper):
+                        quality_row["赔率_高频区间"] = "N/A"
+                    else:
+                        odds_col = mapping.get("odds")
+                        if odds_col and odds_col in member_df.columns:
+                            # 确保赔率数据是数值类型
+                            odds_data = pd.to_numeric(member_df[odds_col], errors='coerce').dropna()
+                            # 过滤掉无效值（<=0 的赔率）
+                            odds_data = odds_data[odds_data > 0]
+                            
+                            if len(odds_data) > 0:
+                                try:
+                                    in_range = odds_data[(odds_data >= lower) & (odds_data <= upper)].count()
+                                    range_pct = in_range / len(odds_data) * 100
+                                    quality_row["赔率_高频区间"] = f"[{lower:.2f}-{upper:.2f}] {range_pct:.0f}%"
+                                except Exception as e:
+                                    print(f"赔率高频区间计算异常: {e}")
+                                    quality_row["赔率_高频区间"] = "N/A"
+                            else:
+                                quality_row["赔率_高频区间"] = "N/A"
+                        else:
+                            quality_row["赔率_高频区间"] = "N/A"
+                else:
+                    quality_row["赔率_高频区间"] = "N/A"
+                
+                # ========== 投注额统计 ==========
+                avg_stake = mr.get('平均投注额', 0) if not pd.isna(mr.get('平均投注额', 0)) else 0
+                stake_std = mr.get('投注额标准差', 0) if not pd.isna(mr.get('投注额标准差', 0)) else 0
+                stake_min = mr.get('单笔最小投注', 0) if '单笔最小投注' in mr.index and not pd.isna(mr.get('单笔最小投注', 0)) else "N/A"
+                stake_max = mr.get('单笔最大投注', 0) if '单笔最大投注' in mr.index and not pd.isna(mr.get('单笔最大投注', 0)) else "N/A"
+                stake_cv = mr.get('投注额变异系数', 0) if not pd.isna(mr.get('投注额变异系数', 0)) else 0
+
+                quality_row["投注额_均值"] = f"{avg_stake:.0f}" if avg_stake > 0 else "N/A"
+                quality_row["投注额_标准差"] = f"{stake_std:.0f}" if stake_std > 0 else "N/A"
+                quality_row["投注额_最小值"] = f"{stake_min:.0f}" if stake_min != "N/A" and stake_min > 0 else "N/A"
+                quality_row["投注额_最大值"] = f"{stake_max:.0f}" if stake_max != "N/A" and stake_max > 0 else "N/A"
+                # 修复变异系数显示：区分0和N/A
+                if stake_cv > 0:
+                    quality_row["投注额_变异系数"] = f"{stake_cv:.2f}"
+                elif stake_cv == 0:
+                    quality_row["投注额_变异系数"] = "0.00"
+                else:
+                    quality_row["投注额_变异系数"] = "N/A"
+                
+                # 计算投注额高频区间（均值±10%）
+                if avg_stake > 0:
+                    lower = avg_stake * 0.9
+                    upper = avg_stake * 1.1
+                    stake_col = mapping.get("bet_amount")
+                    if stake_col and stake_col in member_df.columns:
+                        stake_data = member_df[stake_col].dropna()
+                        if len(stake_data) > 0:
+                            in_range = stake_data[(stake_data >= lower) & (stake_data <= upper)].count()
+                            range_pct = in_range / len(stake_data) * 100
+                            quality_row["投注额_高频区间"] = f"[{lower:.0f}-{upper:.0f}] {range_pct:.0f}%"
+                        else:
+                            quality_row["投注额_高频区间"] = "N/A"
+                    else:
+                        quality_row["投注额_高频区间"] = "N/A"
+                else:
+                    quality_row["投注额_高频区间"] = "N/A"
+                
+                # ========== 输赢统计 ==========
+                avg_winloss = mr.get('平均输赢', 0) if not pd.isna(mr.get('平均输赢', 0)) else 0
+                winloss_std = mr.get('输赢标准差', 0) if not pd.isna(mr.get('输赢标准差', 0)) else 0
+                winloss_min = mr.get('单笔最小输赢', 0) if '单笔最小输赢' in mr.index and not pd.isna(mr.get('单笔最小输赢', 0)) else "N/A"
+                winloss_max = mr.get('单笔最大输赢', 0) if '单笔最大输赢' in mr.index and not pd.isna(mr.get('单笔最大输赢', 0)) else "N/A"
+                winloss_cv = mr.get('输赢变异系数', 0) if not pd.isna(mr.get('输赢变异系数', 0)) else 0
+                
+                quality_row["输赢_均值"] = f"{avg_winloss:.2f}" if avg_winloss != 0 else "0.00"
+                quality_row["输赢_标准差"] = f"{winloss_std:.2f}" if winloss_std > 0 else "N/A"
+                quality_row["输赢_最小值"] = f"{winloss_min:.2f}" if winloss_min != "N/A" else "N/A"
+                quality_row["输赢_最大值"] = f"{winloss_max:.2f}" if winloss_max != "N/A" else "N/A"
+                quality_row["输赢_变异系数"] = f"{winloss_cv:.2f}" if winloss_cv > 0 else "N/A"
+                
+                # 输赢正负分布（直接从 raw_data 获取，如果没有则计算）
+                # 输赢正负分布（直接从 raw_data 获取，如果没有则计算）
+                if '输赢_正负分布' in mr.index and not pd.isna(mr.get('输赢_正负分布')):
+                    quality_row["输赢_正负分布"] = mr.get('输赢_正负分布')
+                else:
+                    # 计算输赢正负分布
+                    winloss_col = mapping.get("win_loss")
+                    if winloss_col and winloss_col in member_df.columns:
+                        winloss_data = member_df[winloss_col].dropna()
+                        if len(winloss_data) > 0:
+                            pos_count = (winloss_data > 0).sum()
+                            neg_count = (winloss_data < 0).sum()
+                            zero_count = (winloss_data == 0).sum()
+                            total = len(winloss_data)
+                            quality_row["输赢_正负分布"] = f"正{pos_count/total*100:.0f}% / 负{neg_count/total*100:.0f}% / 零{zero_count/total*100:.0f}%"
+                        else:
+                            quality_row["输赢_正负分布"] = "无数据"
+                    else:
+                        quality_row["输赢_正负分布"] = "N/A"
+
+                # 输赢倾向（按求和）
+                if '输赢_倾向' in mr.index and not pd.isna(mr.get('输赢_倾向')):
+                    quality_row["输赢_倾向"] = mr.get('输赢_倾向')
+                else:
+                    winloss_col = mapping.get("win_loss")
+                    if winloss_col and winloss_col in member_df.columns:
+                        winloss_data = member_df[winloss_col].dropna()
+                        if len(winloss_data) > 0:
+                            total_winloss = winloss_data.sum()
+                            if total_winloss > 0:
+                                quality_row["输赢_倾向"] = "盈利"
+                            elif total_winloss < 0:
+                                quality_row["输赢_倾向"] = "亏损"
+                            else:
+                                quality_row["输赢_倾向"] = "平衡"
+                        else:
+                            quality_row["输赢_倾向"] = "无数据"
+                    else:
+                        quality_row["输赢_倾向"] = "N/A"
+            else:
+                # raw_data 中无数据，填充 N/A
+                for col in ['赔率_均值', '赔率_标准差', '赔率_最小值', '赔率_最大值', '赔率_变异系数', '赔率_高频区间',
+                        '投注额_均值', '投注额_标准差', '投注额_最小值', '投注额_最大值', '投注额_变异系数', '投注额_高频区间',
+                        '输赢_正负分布', '输赢_倾向']:
+                    quality_row[col] = "N/A"
+            
+            quality_data.append(quality_row)
+        
+        # 创建 DataFrame
+        quality_df = pd.DataFrame(quality_data)
+        
+        # 调整列顺序
+        column_order = ["会员ID", "数据质量", "数据质量详情", "订单数"]
+        
+        # 添加文本列
+        for col_key in ['t1', 't2', 't3', 't4', 't5', 't6', 't7']:
+            actual_col_name = mapping.get(col_key)
+            if actual_col_name and actual_col_name in df_original.columns:
+                column_order.extend([f'{actual_col_name}_最高频值', f'{actual_col_name}_最高频占比', f'{actual_col_name}_唯一值数'])
+        
+        # 添加数值列
+        num_cols_order = [
+            '赔率_均值', '赔率_标准差', '赔率_最小值', '赔率_最大值', '赔率_变异系数', '赔率_高频区间',
+            '投注额_均值', '投注额_标准差', '投注额_最小值', '投注额_最大值', '投注额_变异系数', '投注额_高频区间',
+            '输赢_正负分布', '输赢_倾向'
+        ]
+        
+        for col in num_cols_order:
+            if col in quality_df.columns:
+                column_order.append(col)
+        
+        # 只保留存在的列
+        column_order = [col for col in column_order if col in quality_df.columns]
+        quality_df = quality_df[column_order]
+        
+        # 显示表格
+        st.dataframe(quality_df, use_container_width=True, hide_index=True)
+        
+        # 导出按钮
+        csv = quality_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 导出数据质量检测表",
+            data=csv,
+            file_name=f"data_quality_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            key="export_quality"
+        )
+        
+        # ========== 统计摘要 ==========
+        st.markdown("---")
+        st.markdown("##### 📊 风险等级分布")
         
         # 风险等级分布
-        st.markdown("##### 风险等级分布")
         if "风险等级" in results.columns:
             risk_dist = results["风险等级"].value_counts().reset_index()
             risk_dist.columns = ["风险等级", "会员数"]
             st.dataframe(risk_dist, use_container_width=True, hide_index=True)
         
         # 会员性质分布
-        st.markdown("##### 会员性质分布")
+        st.markdown("##### 📊 会员性质分布")
         if "会员性质" in results.columns:
             type_dist = results["会员性质"].value_counts().reset_index()
             type_dist.columns = ["会员性质", "会员数"]
             st.dataframe(type_dist, use_container_width=True, hide_index=True)
+            
+        #-----质量分析-----
         
         # ========== 详细会员画像表格 ==========
         st.markdown("##### 📋 详细会员画像")
-        
+
         # 辅助函数
         def get_pct(val):
             if val is None or pd.isna(val):
                 return "0%"
             return f"{val:.0%}"
-        # ========== 新增：玩法分布辅助函数 ==========
+
+        # 玩法分布辅助函数
         def get_top_plays(member_id):
             """获取前3个玩法及占比"""
             try:
-                # 从原始数据中获取该会员的玩法列
-                play_col = mapping.get("t5")
+                play_col = mapping.get("t6")  # 新玩法列（t6）
                 if not play_col or play_col not in df.columns:
                     return "无玩法数据"
                 
@@ -218,7 +510,6 @@ def render_member_analysis_page():
                 top_plays = []
                 for i, (play, count) in enumerate(play_counts.head(3).items()):
                     pct = count / total * 100
-                    # 截断过长的玩法名称
                     play_name = str(play)[:15] + "..." if len(str(play)) > 15 else str(play)
                     top_plays.append(f"{play_name}({pct:.0f}%)")
                 
@@ -229,86 +520,81 @@ def render_member_analysis_page():
                 return " / ".join(top_plays)
             except Exception as e:
                 return "计算失败"
-        
+
         display_data = []
-        
-        # ========== 调试：逐行处理 ==========
-        
+        low_order_count = 0  # 订单数不足的会员计数
+
         for idx, row in results.iterrows():
             member_id = row["会员ID"]
-
+            bet_count = row.get("投注次数", 0)
+            
+            # 过滤订单数不足的会员（订单数 < 10）
+            if bet_count < 10:
+                low_order_count += 1
+                continue
             
             # 从 raw_data 获取详细分布
             member_raw = raw_data[raw_data["会员ID"] == member_id]
-            
             if len(member_raw) == 0:
                 continue
-            
             mr = member_raw.iloc[0]
-            # ========== 赔率分布（带边界） ==========
-            # 获取边界
+            
+            # 赔率分布（使用边界列）
             odds_boundary_1 = mr.get('赔率_段1_边界', '【0】')
             odds_boundary_2 = mr.get('赔率_段2_边界', '【0】')
             odds_boundary_3 = mr.get('赔率_段3_边界', '【0】')
             odds_boundary_4 = mr.get('赔率_段4_边界', '【0】')
             odds_boundary_5 = mr.get('赔率_段5_边界', '【0】')
             
-            # 逐列获取值
             odds_p1 = mr.get('赔率_段1占比', 0)
             odds_p2 = mr.get('赔率_段2占比', 0)
             odds_p3 = mr.get('赔率_段3占比', 0)
             odds_p4 = mr.get('赔率_段4占比', 0)
             odds_p5 = mr.get('赔率_段5占比', 0)
-            odds_hint = row.get('赔率_分段提示', '')
             
-            # 构建赔率分布字符串
-            if odds_p1 == 0 and odds_p2 == 0 and odds_p3 == 0 and odds_p4 == 0 and odds_p5 == 0:
-                if '固定' in odds_hint:
-                    odds_dist = odds_hint
-                elif '不足' in odds_hint:
-                    odds_dist = odds_hint
-                elif '3段' in odds_hint:
-                    odds_dist = f"{odds_boundary_1}0% / {odds_boundary_2}{get_pct(odds_p2)} / {odds_boundary_3}{get_pct(odds_p3)} / {odds_boundary_4}{get_pct(odds_p4)} / {odds_boundary_5}0%"
-                else:
-                    odds_dist = "数据不足"
-            else:
-                odds_dist = f"{odds_boundary_1}{get_pct(odds_p1)} / {odds_boundary_2}{get_pct(odds_p2)} / {odds_boundary_3}{get_pct(odds_p3)} / {odds_boundary_4}{get_pct(odds_p4)} / {odds_boundary_5}{get_pct(odds_p5)}"
+            odds_dist = f"{odds_boundary_1}{get_pct(odds_p1)} / {odds_boundary_2}{get_pct(odds_p2)} / {odds_boundary_3}{get_pct(odds_p3)} / {odds_boundary_4}{get_pct(odds_p4)} / {odds_boundary_5}{get_pct(odds_p5)}"
             
-            # ========== 投注额分布（使用边界列） ==========
-            # 获取边界（优先使用边界列，否则使用默认值）
+            # 投注额分布（使用边界列）
             stake_boundary_1 = mr.get('投注额_段1_边界', '【0】')
             stake_boundary_2 = mr.get('投注额_段2_边界', '【0】')
             stake_boundary_3 = mr.get('投注额_段3_边界', '【0】')
             stake_boundary_4 = mr.get('投注额_段4_边界', '【0】')
             stake_boundary_5 = mr.get('投注额_段5_边界', '【0】')
-
-            # 投注额分布
+            
             stake_p1 = mr.get('投注额_段1占比', 0)
             stake_p2 = mr.get('投注额_段2占比', 0)
             stake_p3 = mr.get('投注额_段3占比', 0)
             stake_p4 = mr.get('投注额_段4占比', 0)
             stake_p5 = mr.get('投注额_段5占比', 0)
+            
             stake_dist = f"{stake_boundary_1}{get_pct(stake_p1)} / {stake_boundary_2}{get_pct(stake_p2)} / {stake_boundary_3}{get_pct(stake_p3)} / {stake_boundary_4}{get_pct(stake_p4)} / {stake_boundary_5}{get_pct(stake_p5)}"
             
-            # ========== 输赢分布（使用边界列） ==========
+            # 输赢分布（使用边界列）
             winloss_boundary_1 = mr.get('输赢_段1_边界', '【0】')
             winloss_boundary_2 = mr.get('输赢_段2_边界', '【0】')
             winloss_boundary_3 = mr.get('输赢_段3_边界', '【0】')
             winloss_boundary_4 = mr.get('输赢_段4_边界', '【0】')
             winloss_boundary_5 = mr.get('输赢_段5_边界', '【0】')
-            # 输赢分布
+            
             winloss_p1 = mr.get('输赢_段1占比', 0)
             winloss_p2 = mr.get('输赢_段2占比', 0)
             winloss_p3 = mr.get('输赢_段3占比', 0)
             winloss_p4 = mr.get('输赢_段4占比', 0)
             winloss_p5 = mr.get('输赢_段5占比', 0)
+            
             winloss_dist = f"{winloss_boundary_1}{get_pct(winloss_p1)} / {winloss_boundary_2}{get_pct(winloss_p2)} / {winloss_boundary_3}{get_pct(winloss_p3)} / {winloss_boundary_4}{get_pct(winloss_p4)} / {winloss_boundary_5}{get_pct(winloss_p5)}"
             
-            # 集中度
-            sport_conc = mr.get('t1_集中度', 0)
-            league_conc = mr.get('t2_集中度', 0)
-            play_conc = mr.get('t5_集中度', 0)
-            concentration = f"体育{get_pct(sport_conc)} 联赛{get_pct(league_conc)} 玩法{get_pct(play_conc)}"
+            # 玩法分布
+            play_dist = get_top_plays(member_id)
+            
+            # 集中度（5个指标）
+            sport_conc = mr.get('t1_集中度', 0)      # 体育类型
+            league_conc = mr.get('t2_集中度', 0)     # 联赛
+            status_conc = mr.get('t4_集中度', 0)     # 赛事状态（原 t4）
+            stage_conc = mr.get('t5_集中度', 0)      # 比赛阶段（新 t5）
+            play_conc = mr.get('t6_集中度', 0)       # 玩法（原 t5，现 t6）
+
+            concentration = f"体育{get_pct(sport_conc)} 联赛{get_pct(league_conc)} 状态{get_pct(status_conc)} 阶段{get_pct(stage_conc)} 玩法{get_pct(play_conc)}"
             
             # 其他指标
             odds_cv = mr.get('赔率变异系数', 0)
@@ -317,10 +603,14 @@ def render_member_analysis_page():
                 other_metrics = "N/A"
             else:
                 other_metrics = f"赔率CV={odds_cv:.2f} 投注CV={stake_cv:.2f}"
-                
-             # 计算玩法分布
-            play_dist = get_top_plays(member_id)
             
+            # 验证详情
+            details = row.get("验证详情", "")
+            if isinstance(details, list):
+                details = " | ".join(details) if details else "无"
+            
+            matched_type_str = row.get("匹配类型", "")
+
             display_data.append({
                 "会员ID": member_id,
                 "会员性质": row.get("会员性质", "未知"),
@@ -328,39 +618,40 @@ def render_member_analysis_page():
                 "赔率分布": odds_dist,
                 "投注额分布": stake_dist,
                 "输赢分布": winloss_dist,
-                "玩法分布": play_dist,  # 新增
+                "玩法分布": play_dist,
                 "集中度": concentration,
                 "其他指标": other_metrics,
-                "验证详情": row.get("验证详情", "")
+                "匹配类型": matched_type_str,  # 新增
+                "验证详情": details
             })
+        # 显示过滤提示
+        if low_order_count > 0:
+            st.warning(f"⚠️ 订单数少于10单的会员（共 {low_order_count} 人）已从详细画像中过滤，详见风险等级分布。")
+            st.caption("提示：订单数过少的会员分析价值较低，已自动隐藏。")
 
-
-        
         if display_data:
             display_df = pd.DataFrame(display_data)
             # 调整列顺序
-            column_order = ["会员ID", "会员性质", "风险等级", "赔率分布", "投注额分布", "输赢分布", "玩法分布", "集中度", "其他指标", "验证详情"]
+            column_order = ["会员ID", "会员性质", "风险等级", "赔率分布", "投注额分布", "输赢分布", 
+                "玩法分布", "集中度", "其他指标", "匹配类型", "验证详情"]
             display_df = display_df[column_order]
             
             # 风险等级筛选
             risk_filter = st.multiselect(
                 "筛选风险等级",
-                ["高危", "中危", "风险", "留意", "正常"],
-                default=["高危", "中危", "风险", "留意", "正常"],
+                ["正常", "留意", "风险", "高危", "异常"],
+                default=["高危", "风险", "留意", "异常"],
                 key="risk_filter"
             )
             
             filtered = display_df[display_df["风险等级"].isin(risk_filter)]
-            if len(filtered) == 0:
-                filtered = display_df
-                st.info("当前筛选条件无匹配，显示全部数据")
             
             # 颜色标记函数
             def color_risk(val):
-                if val == "高危":
+                if val == "异常":
+                    return 'background-color: #ff9999'
+                elif val == "高危":
                     return 'background-color: #ffcccc'
-                elif val == "中危":
-                    return 'background-color: #fff3cd'
                 elif val == "风险":
                     return 'background-color: #ffe0b3'
                 elif val == "留意":
@@ -384,7 +675,10 @@ def render_member_analysis_page():
                 key="export_member"
             )
         else:
-            st.info("没有生成会员画像数据")
+            if low_order_count > 0:
+                st.info(f"所有 {low_order_count} 个会员订单数均不足10单，无法生成详细画像。")
+            else:
+                st.info("没有生成会员画像数据")
     else:
         st.info("请配置数据结构后点击「开始分析」")
         
