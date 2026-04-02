@@ -669,7 +669,7 @@ def render_member_analysis_page():
             
             # 显示表格
             st.dataframe(
-            filtered.style.applymap(color_risk_by_level, subset=["风险等级"]),
+            filtered.style.map(color_risk_by_level, subset=["风险等级"]),
             use_container_width=True,
             hide_index=True
             )
