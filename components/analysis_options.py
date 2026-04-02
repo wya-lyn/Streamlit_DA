@@ -114,23 +114,7 @@ def render_member_analysis_page():
             "t7": t7_col if t7_col != "无" else None,  # 下注项
         }
             
-    # ========== 调试：显示用户选择的列映射 ==========
-    with st.expander("🔍 用户选择的列映射"):
-        mapping_display = {
-            "会员ID列": member_col,
-            "投注额列": bet_amount_col,
-            "赔率列": odds_col,
-            "输赢列": win_loss_col,
-            "投注时间列": bet_time_col if bet_time_col != "无" else None,
-            "体育类型列": t1_col if t1_col != "无" else None,
-            "联赛列": t2_col if t2_col != "无" else None,
-            "对阵列": t3_col if t3_col != "无" else None,
-            "阶段列": t4_col if t4_col != "无" else None,
-            "玩法列": t5_col if t5_col != "无" else None,
-            "下注项列": t6_col if t6_col != "无" else None,
-        }
-        st.write("用户选择的列映射:")
-        st.json(mapping_display)
+
     
     # 分析按钮
     if st.button("🔍 开始分析", key="member_analyze", type="primary"):
@@ -218,7 +202,6 @@ def render_member_analysis_page():
                 # 输赢单独处理（只保留正负分布和倾向）
                 quality_row["输赢_正负分布"] = "样本不足"
                 quality_row["输赢_倾向"] = "样本不足"
-                
                 quality_data.append(quality_row)
                 continue
             
@@ -251,7 +234,7 @@ def render_member_analysis_page():
             
             # 文本列统计
             # 文本列统计（使用实际列名）
-            for col_key in ['t1', 't2', 't3', 't4', 't5', 't6']:
+            for col_key in ['t1', 't2', 't3', 't4', 't5', 't6', 't7']:
                 actual_col_name = mapping.get(col_key)
                 if actual_col_name and actual_col_name in df_original.columns:
                     member_cat_data = member_df[actual_col_name].dropna()
@@ -263,11 +246,11 @@ def render_member_analysis_page():
                         
                         quality_row[f'{actual_col_name}_最高频值'] = str(top_value)[:20] if top_value != "无数据" else "无数据"
                         quality_row[f'{actual_col_name}_最高频占比'] = f"{top_pct:.0%}" if top_pct > 0 else "0%"
-                        quality_row[f'{actual_col_name}_唯一值数'] = unique_count
+                        quality_row[f'{actual_col_name}_唯一值数'] = str(unique_count)
                     else:
                         quality_row[f'{actual_col_name}_最高频值'] = "无数据"
                         quality_row[f'{actual_col_name}_最高频占比'] = "0%"
-                        quality_row[f'{actual_col_name}_唯一值数'] = 0
+                        quality_row[f'{actual_col_name}_唯一值数'] = str(0)
             
             # 从 raw_data 获取统计（赔率、投注额、输赢）
             mr = raw_data[raw_data["会员ID"] == member_id].iloc[0] if len(raw_data[raw_data["会员ID"] == member_id]) > 0 else None
@@ -294,8 +277,8 @@ def render_member_analysis_page():
                 
                 # 计算赔率高频区间（均值±10%）
                 if avg_odds > 0:
-                    lower = avg_odds * 0.9
-                    upper = avg_odds * 1.1
+                    lower = avg_odds * 0.85
+                    upper = avg_odds * 1.15
                     
                     # 确保 lower 和 upper 是有效数值
                     if pd.isna(lower) or pd.isna(upper):
@@ -1157,13 +1140,14 @@ def render_descriptive_stats_with_chart():
             total_count = len(df[col])
             mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else "N/A"
             mode_count = df[col].value_counts().iloc[0] if len(df[col].value_counts()) > 0 else 0
+            mode_val_str = str(mode_val) if mode_val != "N/A" else "N/A"
             
             text_stats.append({
                 "列名": col,
                 "总记录数": total_count,
                 "唯一值数": unique_count,
                 "唯一值占比": f"{unique_count / total_count * 100:.1f}%",
-                "最频繁值": mode_val,
+                "最频繁值": mode_val_str,
                 "最频繁值出现次数": mode_count,
                 "最频繁值占比": f"{mode_count / total_count * 100:.1f}%" if mode_count > 0 else "0%",
                 "缺失值": df[col].isna().sum()
@@ -1312,12 +1296,6 @@ def render_correlation_with_heatmap():
             """ + (", ".join(numeric_cols) if numeric_cols else "无数值列"))
         return
     
-    # 调试信息
-    with st.expander("🔍 调试信息（点击展开）", expanded=False):
-        st.write(f"所有列名: {st.session_state.df.columns.tolist()}")
-        st.write(f"数据类型: {st.session_state.df.dtypes.to_dict()}")
-        st.write(f"检测到的数值列数: {len(numeric_cols)}")
-        st.write(f"数值列名: {numeric_cols}")
     
     # 列选择
     selected_cols = st.multiselect(

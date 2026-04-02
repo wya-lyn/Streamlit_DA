@@ -29,12 +29,6 @@ class MemberAnalyzer:
         self.member_stats = None
         self.results = None
         
-    def get_column_info(self):
-        """获取列信息用于调试"""
-        return {
-            "原始列名": self.df.columns.tolist(),
-            "映射配置": {k: v for k, v in self.mapping.items() if v is not None}
-        }
     
     def preprocess_data(self):
         """数据预处理"""
@@ -554,7 +548,7 @@ class MemberAnalyzer:
         matched_types = []
         
         # 软件刷单（使用玩法集中度 play_conc）
-        if odds_p1 > 0.6 and stake_p1 > 0.5 and play_conc > 0.7:
+        if odds_p1 > 0.6 and stake_p3 > 0.5 and play_conc > 0.5:
             matched_types.append("软件刷单")
 
         # 套利玩家
@@ -574,7 +568,7 @@ class MemberAnalyzer:
             matched_types.append("问题玩家")
 
         # 单一玩家（使用体育、联赛、玩法集中度）
-        if sport_conc > 0.8 and league_conc > 0.8 and play_conc > 0.8:
+        if sport_conc > 0.8 and league_conc > 0.4 and play_conc > 0.5:
             matched_types.append("单一玩家")
 
         # 阶段偏好玩家（使用赛事状态集中度 status_conc，不是比赛阶段）

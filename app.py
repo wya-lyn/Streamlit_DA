@@ -199,16 +199,27 @@ def render_file_uploader():
     current_file_key = f"{uploaded_file.name}_{uploaded_file.size}"
     last_key = st.session_state.get('last_uploaded_file_key')
     
-    # 重复上传同一文件
-    if last_key == current_file_key:
+    # 检查是否正在等待 Excel 工作表选择
+    is_waiting_excel = any(key.startswith('excel_state_') for key in st.session_state.keys())
+    
+    # 重复上传同一文件且不是等待状态，直接返回
+    if last_key == current_file_key and not is_waiting_excel:
         if st.session_state.df is not None:
             st.info(f"📁 已加载: {uploaded_file.name}")
         return
     
-    # 新文件，清空旧数据
-    st.session_state.df = None
-    st.session_state.original_df = None
-    st.session_state.preview_manager.clear_preview()
+    # 新文件或需要重新加载
+    if not is_waiting_excel:
+        # 只有在非等待状态下才清空旧数据
+        st.session_state.df = None
+        st.session_state.original_df = None
+        if hasattr(st.session_state, 'preview_manager'):
+            st.session_state.preview_manager.clear_preview()
+        
+        # 清理所有旧的 excel_state（避免累积）
+        for key in list(st.session_state.keys()):
+            if key.startswith('excel_state_'):
+                del st.session_state[key]
     
     # 统一调用 file_loader 处理所有格式
     with st.spinner("正在加载数据..."):
@@ -221,18 +232,28 @@ def render_file_uploader():
         st.session_state.df = df
         st.session_state.original_df = df.copy()
         st.session_state.last_uploaded_file_key = current_file_key
+        
+        # 清理所有 excel_state（确保没有残留）
+        for key in list(st.session_state.keys()):
+            if key.startswith('excel_state_'):
+                del st.session_state[key]
+        
         managers['history'].add_to_history("上传文件", df)
         st.success(f"✅ 加载成功！{len(df)}行 × {len(df.columns)}列")
         st.session_state.preview_manager.record_operation("上传文件")
         st.rerun()
     else:
-        # 不立即报错，因为可能是多工作表等待确认
         # 检查是否在多工作表选择状态
         if any(key.startswith('excel_state_') for key in st.session_state.keys()):
-            # 正在等待用户选择工作表，不显示错误
-            pass
+            # 正在等待用户选择工作表，显示提示信息
+            st.info(f"📊 请在上方选择要加载的工作表")
         else:
             st.error("文件加载失败，请检查文件格式")
+            # 加载失败，清理可能残留的状态
+            st.session_state.last_uploaded_file_key = None
+            for key in list(st.session_state.keys()):
+                if key.startswith('excel_state_'):
+                    del st.session_state[key]
 # ============================================
 # 右侧功能面板
 # ============================================
