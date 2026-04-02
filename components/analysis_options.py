@@ -975,7 +975,7 @@ def render_data_quality_analysis():
         quality_df['风险等级'] = quality_df['风险等级'].astype(str)
         
         st.dataframe(
-            quality_df.style.applymap(color_risk_by_level, subset=['风险等级']),
+            quality_df.style.map(color_risk_by_level, subset=['风险等级']),
             use_container_width=True,
             hide_index=True
         )
