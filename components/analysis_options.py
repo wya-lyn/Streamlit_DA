@@ -15,6 +15,32 @@ from components.group_stats_chart import GroupStatsChart
 from utils.depth_analysis import DepthAnalysisEngine
 from components.member_analysis import MemberAnalyzer
 
+# ========== 全局辅助函数 ==========
+def color_risk_by_level(val):
+    """
+    通用的风险等级着色函数
+    支持会员分析风险等级和数据质量分析风险等级
+    """
+    if not isinstance(val, str):
+        return ''
+    
+    color_map = {
+        # 会员分析风险等级
+        "异常": '#ff9999',      # 深红色
+        "高危": '#ffcccc',      # 浅红色
+        "风险": '#ffe0b3',      # 橙色
+        "留意": '#d1ecf1',      # 浅蓝色
+        # 数据质量分析风险等级
+        "高风险": '#ffcccc',     # 浅红色
+        "中风险": '#fff3cd',     # 浅黄色
+        "低风险": '#d1ecf1',     # 浅蓝色
+        # 正常（两个表都有，无背景色）
+        "正常": '',
+        "良好": '',
+    }
+    
+    bg_color = color_map.get(val, '')
+    return f'background-color: {bg_color}' if bg_color else ''
 
 def render_analysis_options_tab():
     """分析选项标签页（整合统计和图表）"""
@@ -643,9 +669,9 @@ def render_member_analysis_page():
             
             # 显示表格
             st.dataframe(
-                filtered.style.applymap(color_risk, subset=["风险等级"]),
-                use_container_width=True,
-                hide_index=True
+            filtered.style.applymap(color_risk_by_level, subset=["风险等级"]),
+            use_container_width=True,
+            hide_index=True
             )
             
             # 导出按钮
@@ -671,7 +697,6 @@ def render_data_quality_analysis():
     st.caption("通过频度分布检测数据是否可能存在异常（如机器操作、数据倾斜等）")
     
     df = st.session_state.df
-    
     
     quality_stats = []
     
@@ -749,13 +774,17 @@ def render_data_quality_analysis():
             if not anomalies:
                 anomalies.append("分布正常")
             
+            # 确保最频繁值转换为字符串
+            top_value = value_counts.index[0] if len(value_counts) > 0 else "无"
+            top_value_str = str(top_value)[:30] if top_value != "无" else "无"
+            
             quality_stats.append({
                 "列名": col,
                 "类型": "文本",
                 "风险等级": risk_level,
                 "唯一值数": unique,
                 "唯一值占比": f"{unique_pct:.1f}%",
-                "最频繁值": str(value_counts.index[0])[:30] if len(value_counts) > 0 else "无",
+                "最频繁值": top_value_str,
                 "最频繁值占比": f"{top1_pct:.1f}%",
                 "前3值占比": f"{top3_pct:.1f}%",
                 "缺失率": f"{missing_pct:.1f}%",
@@ -937,45 +966,46 @@ def render_data_quality_analysis():
             "异常说明": "、".join(anomalies)
         })
     
-    # 显示结果
+    # ========== 显示结果 ==========
     quality_df = pd.DataFrame(quality_stats)
     
-    # 风险等级着色
-    def color_risk(val):
-        if val == "高风险":
-            return 'background-color: #ffcccc'
-        elif val == "中风险":
-            return 'background-color: #fff3cd'
-        elif val == "低风险":
-            return 'background-color: #d1ecf1'
-        return ''
-    
-    st.dataframe(
-        quality_df.style.applymap(color_risk, subset=['风险等级']),
-        use_container_width=True,
-        hide_index=True
-    )
-    
-    # 风险汇总
-    high_risk = quality_df[quality_df["风险等级"] == "高风险"]
-    mid_risk = quality_df[quality_df["风险等级"] == "中风险"]
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("高风险列", len(high_risk), delta=None)
-    with col2:
-        st.metric("中风险列", len(mid_risk), delta=None)
-    with col3:
-        st.metric("正常列", len(quality_df) - len(high_risk) - len(mid_risk), delta=None)
-    
-    if len(high_risk) > 0:
-        st.warning(f"⚠️ 发现 {len(high_risk)} 个高风险列，建议检查数据质量")
-        with st.expander("查看高风险列详情"):
-            st.dataframe(high_risk[["列名", "类型", "异常说明"]], use_container_width=True, hide_index=True)
-    elif len(mid_risk) > 0:
-        st.info(f"📊 发现 {len(mid_risk)} 个中风险列，可能存在数据倾斜或异常")
+    # 检查风险等级列是否存在
+    if '风险等级' in quality_df.columns:
+        # 确保风险等级列是字符串类型
+        quality_df['风险等级'] = quality_df['风险等级'].astype(str)
+        
+        st.dataframe(
+            quality_df.style.applymap(color_risk_by_level, subset=['风险等级']),
+            use_container_width=True,
+            hide_index=True
+        )
     else:
-        st.success("✅ 所有列分布正常")
+        # 如果没有风险等级列，直接显示表格
+        st.dataframe(quality_df, use_container_width=True, hide_index=True)
+    
+    # ========== 风险汇总 ==========
+    if '风险等级' in quality_df.columns:
+        high_risk = quality_df[quality_df["风险等级"] == "高风险"]
+        mid_risk = quality_df[quality_df["风险等级"] == "中风险"]
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("高风险列", len(high_risk), delta=None)
+        with col2:
+            st.metric("中风险列", len(mid_risk), delta=None)
+        with col3:
+            st.metric("正常列", len(quality_df) - len(high_risk) - len(mid_risk), delta=None)
+        
+        if len(high_risk) > 0:
+            st.warning(f"⚠️ 发现 {len(high_risk)} 个高风险列，建议检查数据质量")
+            with st.expander("查看高风险列详情"):
+                st.dataframe(high_risk[["列名", "类型", "异常说明"]], use_container_width=True, hide_index=True)
+        elif len(mid_risk) > 0:
+            st.info(f"📊 发现 {len(mid_risk)} 个中风险列，可能存在数据倾斜或异常")
+        else:
+            st.success("✅ 所有列分布正常")
+    else:
+        st.info("无法进行风险等级汇总")
         
 
 def render_descriptive_stats_with_chart():
